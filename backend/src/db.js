@@ -30,6 +30,7 @@ const SEED = [
   { deskId: "TB-057", name: "Siam" },
   { deskId: "TB-110", name: "Maruf" },
   { deskId: "TB-109", name: "Rashed" },
+  { deskId: "TB-108", name: "Sidul" },
   { deskId: "TB-107", name: "Asad" },
 ];
 

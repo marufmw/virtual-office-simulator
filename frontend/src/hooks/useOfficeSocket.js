@@ -50,6 +50,7 @@ export function useOfficeSocket(world, joinInfoRef) {
           world.addPlayer(p.id, p.x, p.y, p.character, p.name);
           if (p.id === world.myId) {
             world.myPos = { x: p.x, y: p.y };
+            world.myDeskId = p.deskId;
             localStorage.setItem("character", p.character);
           }
         }
@@ -58,6 +59,8 @@ export function useOfficeSocket(world, joinInfoRef) {
       } else if (msg.type === "update") {
         // Someone changed their name/character/desk — rebuild their visuals
         world.updatePlayer(msg.player.id, msg.player);
+        // Keep our own desk in sync so "Go to desk" targets the new one
+        if (msg.player.id === world.myId) world.myDeskId = msg.player.deskId;
       } else if (msg.type === "move") {
         world.movePlayer(msg.id, msg.x, msg.y);
       } else if (msg.type === "position") {

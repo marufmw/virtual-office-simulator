@@ -82,9 +82,9 @@ export function createWorld(container) {
 
   // Wall-mounted decorations on the top wall
   const wallProps = [
-    ["door", 2, 12, ROOM.maxY], // embedded in the wall
+    ["door", 2, 12, ROOM.maxY + 1], // embedded in the wall
     ["chart", 1.5, 0, ROOM.maxY], // hanging on the bricks
-    ["extinguisher", 0.5, 13.8, ROOM.maxY - 1.3], // standing at the wall base
+    ["extinguisher", 0.5, 13.8, ROOM.maxY], // standing at the wall base
   ];
   for (const [name, width, x, y] of wallProps) {
     const prop = createPropMesh(name, width);
@@ -101,7 +101,17 @@ export function createWorld(container) {
     renderer,
     players,
     myId: null,
+    myDeskId: null,
     myPos: { x: 0, y: 0 },
+    moveTarget: null, // { x, y } auto-walk destination, set by the context menu
+
+    // Position of a desk plus the standing spot in front of it
+    deskStandPosition(id) {
+      const desk = desks.get(id);
+      if (!desk) return null;
+      const { x, y } = desk.group.position;
+      return { x, y: y - 1.6 };
+    },
 
     addDesk(id, x, y) {
       const desk = createDesk(id, x, y);

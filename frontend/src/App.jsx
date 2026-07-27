@@ -5,6 +5,7 @@ import { useOfficeSocket } from "./hooks/useOfficeSocket";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { JoinForm } from "./components/JoinForm";
 import { SettingsButton } from "./components/SettingsButton";
+import { ContextMenu } from "./components/ContextMenu";
 
 function Office({ world, joinInfo, onProfileChange }) {
   const keysRef = useKeyboard();
@@ -14,13 +15,20 @@ function Office({ world, joinInfo, onProfileChange }) {
   useGameLoop(world, keysRef, sendMoveRef);
 
   return (
-    <SettingsButton
-      joinInfo={joinInfo}
-      onSave={(profile) => {
-        sendProfileRef.current(profile);
-        onProfileChange(profile);
-      }}
-    />
+    <>
+      <SettingsButton
+        joinInfo={joinInfo}
+        onSave={(profile) => {
+          sendProfileRef.current(profile);
+          onProfileChange(profile);
+        }}
+      />
+      <ContextMenu
+        onGoToDesk={() => {
+          world.moveTarget = world.deskStandPosition(world.myDeskId);
+        }}
+      />
+    </>
   );
 }
 
