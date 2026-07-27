@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { VIEW_SIZE } from "../config";
 import { createAnimatedPlayer } from "./createAnimatedPlayer";
+import { createNameLabel } from "./createNameLabel";
 
 /**
  * Creates the game world: Three.js scene, camera, renderer and the
@@ -22,7 +23,7 @@ export function createWorld(container) {
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
 
-  const players = new Map(); // id -> { sprite, update, dispose, prevX, prevY }
+  const players = new Map(); // id -> { group, update, dispose, prevX, prevY }
 
   const world = {
     scene,
@@ -32,25 +33,36 @@ export function createWorld(container) {
     myId: null,
     myPos: { x: 0, y: 0 },
 
-    addPlayer(id, x, y, character) {
+    addPlayer(id, x, y, character, name) {
       const player = createAnimatedPlayer(character);
-      player.sprite.position.set(x, y, 0);
+      const group = new THREE.Group();
+      group.position.set(x, y, 0);
+      group.add(player.sprite);
+
+      if (name) {
+        const label = createNameLabel(name);
+        label.sprite.position.y = 1.1; // above the character's head
+        group.add(label.sprite);
+        player.labelDispose = label.dispose;
+      }
+
+      player.group = group;
       player.prevX = x;
       player.prevY = y;
-      scene.add(player.sprite);
+      scene.add(group);
       players.set(id, player);
     },
 
     movePlayer(id, x, y) {
       const player = players.get(id);
-      if (player) player.sprite.position.set(x, y, 0);
+      if (player) player.group.position.set(x, y, 0);
     },
 
     // Advances every player's animation. Movement state for remote
     // players is derived from position changes since the last frame.
     updateAnimations(delta) {
       for (const [pid, player] of players) {
-        const { x, y } = player.sprite.position;
+        const { x, y } = player.group.position;
         const dirX = x - player.prevX;
         const dirY = y - player.prevY;
         player.update(delta, dirX !== 0 || dirY !== 0, dirX, dirY);
@@ -63,7 +75,7 @@ export function createWorld(container) {
     // the server stays authoritative)
     collidesAt(x, y, exceptId = null) {
       for (const [pid, player] of players) {
-        const pos = player.sprite.position;
+        const pos = player.group.position;
         if (pid !== exceptId && Math.abs(pos.x - x) < 1 && Math.abs(pos.y - y) < 1) {
           return true;
         }
@@ -81,8 +93,9 @@ export function createWorld(container) {
     removePlayer(id) {
       const player = players.get(id);
       if (player) {
-        scene.remove(player.sprite);
+        scene.remove(player.group);
         player.dispose();
+        player.labelDispose?.();
         players.delete(id);
       }
     },

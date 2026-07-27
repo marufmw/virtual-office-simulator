@@ -1,14 +1,30 @@
 const { WebSocketServer } = require("ws");
+const db = require("./db");
 
 const PORT = process.env.PORT || 3001;
+const SAVE_INTERVAL_MS = 10_000;
 
 const wss = new WebSocketServer({ port: PORT });
 
-const players = new Map(); // id -> { ws, x, y, color }
+const players = new Map(); // sessionId -> { ws, deskId, name, x, y, character }
 let nextId = 1;
 
 const PLAYER_COLORS = ["#4caf50", "#2196f3", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4"];
-const CHARACTERS = ["character_1", "character_2"];
+const CHARACTERS = [
+  "character_1",
+  "office_blonde_man_red",
+  "office_blonde_man_blue",
+  "office_man_white_shirt",
+  "office_man_dark_red",
+  "office_blonde_woman_teal",
+  "office_woman_red",
+  "office_man_green",
+  "office_man_gray",
+  "office_woman_pink",
+  "office_man_black_suit",
+  "office_man_lavender",
+  "office_woman_blue",
+];
 const PLAYER_SIZE = 1; // square side length, used for AABB collision
 
 function collides(x, y, exceptId = null) {
@@ -38,36 +54,76 @@ function broadcast(data, exceptId = null) {
   }
 }
 
+const publicPlayer = (pid, p) => ({
+  id: pid,
+  deskId: p.deskId,
+  name: p.name,
+  x: p.x,
+  y: p.y,
+  color: p.color,
+  character: p.character,
+});
+
+// World state is kept in the players table; log what we loaded at startup
+const savedPlayers = db.loadPlayers();
+console.log(`Loaded ${savedPlayers.length} player(s) from the database`);
+
+// Periodically persist the world state
+setInterval(() => {
+  for (const p of players.values()) {
+    db.savePosition(p.deskId, p.x, p.y);
+  }
+}, SAVE_INTERVAL_MS);
+
 wss.on("connection", (ws) => {
   const id = nextId++;
-  const player = {
-    ws,
-    ...findSpawn(),
-    color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
-    character: CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)],
-  };
-  players.set(id, player);
-  console.log(`Player ${id} connected (${players.size} online)`);
-
-  const publicPlayer = (pid, p) => ({ id: pid, x: p.x, y: p.y, color: p.color, character: p.character });
-
-  // Send the new client its id and the current state of all players
-  ws.send(
-    JSON.stringify({
-      type: "init",
-      id,
-      players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
-    })
-  );
-
-  // Tell everyone else about the new player
-  broadcast({ type: "join", player: publicPlayer(id, player) }, id);
+  let player = null;
 
   ws.on("message", (data) => {
     let msg;
     try {
       msg = JSON.parse(data);
     } catch {
+      return;
+    }
+
+    if (!player) {
+      // First message must be the join handshake
+      if (msg.type !== "hello" || typeof msg.deskId !== "string" || !msg.deskId) return;
+
+      const existing = db.getPlayer(msg.deskId);
+      let record;
+      if (existing) {
+        record = existing;
+      } else {
+        if (typeof msg.name !== "string" || !msg.name) return; // new desks need a name
+        const spawn = findSpawn();
+        const character = CHARACTERS.includes(msg.character)
+          ? msg.character
+          : CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+        record = db.createPlayer(msg.deskId, msg.name, character, spawn.x, spawn.y);
+      }
+
+      player = {
+        ws,
+        deskId: record.desk_id,
+        name: record.name,
+        x: record.x,
+        y: record.y,
+        color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
+        character: record.character,
+      };
+      players.set(id, player);
+      console.log(`Player ${player.name} (${player.deskId}) joined (${players.size} online)`);
+
+      ws.send(
+        JSON.stringify({
+          type: "init",
+          id,
+          players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
+        })
+      );
+      broadcast({ type: "join", player: publicPlayer(id, player) }, id);
       return;
     }
 
@@ -84,9 +140,11 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    if (!player) return;
     players.delete(id);
+    db.savePosition(player.deskId, player.x, player.y);
     broadcast({ type: "leave", id });
-    console.log(`Player ${id} disconnected (${players.size} online)`);
+    console.log(`Player ${player.name} (${player.deskId}) left (${players.size} online)`);
   });
 });
 
