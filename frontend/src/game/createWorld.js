@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { VIEW_SIZE } from "../config";
+import { createAnimatedPlayer } from "./createAnimatedPlayer";
 
 /**
  * Creates the game world: Three.js scene, camera, renderer and the
@@ -16,11 +17,12 @@ export function createWorld(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   container.appendChild(renderer.domElement);
 
-  const grid = new THREE.GridHelper(40, 40, 0x444466, 0x333344);
+  // Large enough to always cover the viewport; repositioned by updateGrid()
+  const grid = new THREE.GridHelper(120, 120, 0x444466, 0x333344);
   grid.rotation.x = Math.PI / 2;
   scene.add(grid);
 
-  const players = new Map(); // id -> THREE.Mesh
+  const players = new Map(); // id -> { sprite, update, dispose, prevX, prevY }
 
   const world = {
     scene,
@@ -30,26 +32,57 @@ export function createWorld(container) {
     myId: null,
     myPos: { x: 0, y: 0 },
 
-    addPlayer(id, x, y, color) {
-      const geometry = new THREE.PlaneGeometry(1, 1);
-      const material = new THREE.MeshBasicMaterial({ color });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(x, y, 0);
-      scene.add(mesh);
-      players.set(id, mesh);
+    addPlayer(id, x, y) {
+      const player = createAnimatedPlayer();
+      player.sprite.position.set(x, y, 0);
+      player.prevX = x;
+      player.prevY = y;
+      scene.add(player.sprite);
+      players.set(id, player);
     },
 
     movePlayer(id, x, y) {
-      const mesh = players.get(id);
-      if (mesh) mesh.position.set(x, y, 0);
+      const player = players.get(id);
+      if (player) player.sprite.position.set(x, y, 0);
+    },
+
+    // Advances every player's animation. Movement state for remote
+    // players is derived from position changes since the last frame.
+    updateAnimations(delta) {
+      for (const [pid, player] of players) {
+        const { x, y } = player.sprite.position;
+        const dirX = x - player.prevX;
+        const dirY = y - player.prevY;
+        player.update(delta, dirX !== 0 || dirY !== 0, dirX, dirY);
+        player.prevX = x;
+        player.prevY = y;
+      }
+    },
+
+    // AABB check against every other player (client-side prediction;
+    // the server stays authoritative)
+    collidesAt(x, y, exceptId = null) {
+      for (const [pid, player] of players) {
+        const pos = player.sprite.position;
+        if (pid !== exceptId && Math.abs(pos.x - x) < 1 && Math.abs(pos.y - y) < 1) {
+          return true;
+        }
+      }
+      return false;
+    },
+
+    // Keeps the grid under the camera, snapped to whole units so the
+    // lines stay aligned — makes the grid appear infinite
+    updateGrid() {
+      grid.position.x = Math.round(camera.position.x);
+      grid.position.y = Math.round(camera.position.y);
     },
 
     removePlayer(id) {
-      const mesh = players.get(id);
-      if (mesh) {
-        scene.remove(mesh);
-        mesh.geometry.dispose();
-        mesh.material.dispose();
+      const player = players.get(id);
+      if (player) {
+        scene.remove(player.sprite);
+        player.dispose();
         players.delete(id);
       }
     },

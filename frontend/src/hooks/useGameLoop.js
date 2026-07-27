@@ -23,10 +23,15 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
 
       if ((dx !== 0 || dy !== 0) && world.myId !== null) {
         const length = Math.hypot(dx, dy);
-        world.myPos.x += (dx / length) * SPEED * delta;
-        world.myPos.y += (dy / length) * SPEED * delta;
-        world.movePlayer(world.myId, world.myPos.x, world.myPos.y);
-        positionDirty = true;
+        const nextX = world.myPos.x + (dx / length) * SPEED * delta;
+        const nextY = world.myPos.y + (dy / length) * SPEED * delta;
+        // Client-side collision prediction; the server re-validates
+        if (!world.collidesAt(nextX, nextY, world.myId)) {
+          world.myPos.x = nextX;
+          world.myPos.y = nextY;
+          world.movePlayer(world.myId, world.myPos.x, world.myPos.y);
+          positionDirty = true;
+        }
       }
 
       sendTimer += delta;
@@ -47,6 +52,8 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
       const delta = clock.getDelta();
       updateMovement(delta);
       updateCamera(delta);
+      world.updateGrid();
+      world.updateAnimations(delta);
       world.renderer.render(world.scene, world.camera);
     }
 

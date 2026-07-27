@@ -8,6 +8,25 @@ const players = new Map(); // id -> { ws, x, y, color }
 let nextId = 1;
 
 const PLAYER_COLORS = ["#4caf50", "#2196f3", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4"];
+const PLAYER_SIZE = 1; // square side length, used for AABB collision
+
+function collides(x, y, exceptId = null) {
+  for (const [pid, p] of players) {
+    if (pid !== exceptId && Math.abs(p.x - x) < PLAYER_SIZE && Math.abs(p.y - y) < PLAYER_SIZE) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findSpawn() {
+  for (let i = 0; i < 100; i++) {
+    const x = Math.floor(Math.random() * 10 - 5);
+    const y = Math.floor(Math.random() * 10 - 5);
+    if (!collides(x, y)) return { x, y };
+  }
+  return { x: 0, y: 0 };
+}
 
 function broadcast(data, exceptId = null) {
   const message = JSON.stringify(data);
@@ -22,8 +41,7 @@ wss.on("connection", (ws) => {
   const id = nextId++;
   const player = {
     ws,
-    x: Math.floor(Math.random() * 10 - 5),
-    y: Math.floor(Math.random() * 10 - 5),
+    ...findSpawn(),
     color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
   };
   players.set(id, player);
@@ -50,6 +68,11 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "move" && typeof msg.x === "number" && typeof msg.y === "number") {
+      if (collides(msg.x, msg.y, id)) {
+        // Reject: send the authoritative position back so the client snaps to it
+        ws.send(JSON.stringify({ type: "position", x: player.x, y: player.y }));
+        return;
+      }
       player.x = msg.x;
       player.y = msg.y;
       broadcast({ type: "move", id, x: player.x, y: player.y }, id);

@@ -30,6 +30,10 @@ export function useOfficeSocket(world) {
         world.addPlayer(msg.player.id, msg.player.x, msg.player.y, msg.player.color);
       } else if (msg.type === "move") {
         world.movePlayer(msg.id, msg.x, msg.y);
+      } else if (msg.type === "position") {
+        // Server rejected our move — snap back to the authoritative position
+        world.myPos = { x: msg.x, y: msg.y };
+        world.movePlayer(world.myId, msg.x, msg.y);
       } else if (msg.type === "leave") {
         world.removePlayer(msg.id);
       }
