@@ -20,7 +20,18 @@ db.exec(`
     character TEXT NOT NULL,
     x         REAL NOT NULL DEFAULT 0,
     y         REAL NOT NULL DEFAULT 0
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_desk  TEXT NOT NULL,
+    to_desk    TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS messages_pair
+    ON messages (from_desk, to_desk, created_at);
 `);
 
 // Seed the office: desks and their assigned users. Anything not in
@@ -75,6 +86,17 @@ SEED.forEach(({ deskId, name }, i) => {
 
 const updatePosStmt = db.prepare("UPDATE players SET x = ?, y = ? WHERE desk_id = ?");
 
+const insertMessageStmt = db.prepare(
+  "INSERT INTO messages (from_desk, to_desk, body, created_at) VALUES (?, ?, ?, ?)"
+);
+// Both directions of a one-on-one conversation, oldest first
+const conversationStmt = db.prepare(
+  `SELECT from_desk, to_desk, body, created_at
+     FROM messages
+    WHERE (from_desk = ? AND to_desk = ?) OR (from_desk = ? AND to_desk = ?)
+    ORDER BY created_at, id`
+);
+
 module.exports = {
   getPlayer: (deskId) => getStmt.get(deskId),
 
@@ -91,6 +113,18 @@ module.exports = {
       .run(deskId, name, character, oldDeskId),
 
   loadPlayers: () => db.prepare("SELECT * FROM players").all(),
+
+  saveMessage: (fromDesk, toDesk, body, createdAt) =>
+    insertMessageStmt.run(fromDesk, toDesk, body, createdAt),
+
+  // Full chat history between two desks, oldest first
+  loadConversation: (deskA, deskB) =>
+    conversationStmt.all(deskA, deskB, deskB, deskA).map((m) => ({
+      fromDesk: m.from_desk,
+      toDesk: m.to_desk,
+      body: m.body,
+      createdAt: m.created_at,
+    })),
 
   getDesk: (id) => db.prepare("SELECT * FROM desks WHERE id = ?").get(id),
 

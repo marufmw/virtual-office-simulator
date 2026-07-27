@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { VIEW_SIZE } from "../config";
+import { VIEW_SIZE, INTERACT_DISTANCE } from "../config";
 import { createAnimatedPlayer } from "./createAnimatedPlayer";
+import { createInteractIndicator } from "./createInteractIndicator";
 import { createNameLabel } from "./createNameLabel";
 import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
 import { createPropMesh } from "./props";
@@ -95,6 +96,9 @@ export function createWorld(container) {
   const players = new Map(); // id -> { group, update, dispose, prevX, prevY }
   const desks = new Map(); // id -> { dispose }
 
+  const indicator = createInteractIndicator();
+  scene.add(indicator.sprite);
+
   const world = {
     scene,
     camera,
@@ -104,6 +108,52 @@ export function createWorld(container) {
     myDeskId: null,
     myPos: { x: 0, y: 0 },
     moveTarget: null, // { x, y } auto-walk destination, set by the context menu
+
+    // Session id of the closest player within interaction range, or null.
+    // `onNearbyChange` is set by React so the UI can follow it.
+    nearbyId: null,
+    onNearbyChange: null,
+
+    /**
+     * Finds the closest other player within INTERACT_DISTANCE and parks the
+     * speech-bubble indicator between the two of us. Called every frame.
+     */
+    updateProximity(delta) {
+      const me = players.get(world.myId);
+      if (!me) return;
+      const mine = me.group.position;
+
+      let closestId = null;
+      let closestDistance = INTERACT_DISTANCE;
+      for (const [pid, player] of players) {
+        if (pid === world.myId) continue;
+        const pos = player.group.position;
+        const distance = Math.hypot(pos.x - mine.x, pos.y - mine.y);
+        if (distance <= closestDistance) {
+          closestDistance = distance;
+          closestId = pid;
+        }
+      }
+
+      indicator.sprite.visible = closestId !== null;
+      if (closestId !== null) {
+        indicator.placeBetween(mine, players.get(closestId).group.position);
+      }
+      indicator.update(delta);
+
+      if (closestId !== world.nearbyId) {
+        world.nearbyId = closestId;
+        world.onNearbyChange?.(closestId);
+      }
+    },
+
+    // True if the given normalized device coords land on the indicator
+    indicatorHit(ndcX, ndcY) {
+      if (!indicator.sprite.visible) return false;
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+      return raycaster.intersectObject(indicator.sprite).length > 0;
+    },
 
     // Position of a desk plus the standing spot in front of it
     deskStandPosition(id) {
@@ -133,6 +183,7 @@ export function createWorld(container) {
       }
 
       player.group = group;
+      player.name = name;
       player.prevX = x;
       player.prevY = y;
       scene.add(group);
@@ -220,6 +271,8 @@ export function createWorld(container) {
         desk.dispose();
       }
       desks.clear();
+      scene.remove(indicator.sprite);
+      indicator.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },

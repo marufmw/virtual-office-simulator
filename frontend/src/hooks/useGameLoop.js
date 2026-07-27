@@ -105,6 +105,7 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
       updateMovement(delta);
       updateCamera(delta);
       world.updateAnimations(delta);
+      world.updateProximity(delta);
       world.renderer.render(world.scene, world.camera);
     }
 

@@ -5,11 +5,14 @@ import { WS_URL } from "../config";
  * Manages the WebSocket connection and applies server messages to the
  * world. Sends the join handshake (hello) once the socket opens.
  * `joinInfoRef` is read lazily so profile changes don't reconnect.
- * Returns refs with `sendMove(x, y)` and `sendProfile(profile)` functions.
+ * `chatRef` holds `{ onMessage, onHistory }` callbacks, also read lazily.
+ * Returns refs with `sendMove`, `sendProfile`, `sendDm` and `requestHistory`.
  */
-export function useOfficeSocket(world, joinInfoRef) {
+export function useOfficeSocket(world, joinInfoRef, chatRef) {
   const sendMoveRef = useRef(() => {});
   const sendProfileRef = useRef(() => {});
+  const sendDmRef = useRef(() => {});
+  const requestHistoryRef = useRef(() => {});
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
@@ -35,6 +38,18 @@ export function useOfficeSocket(world, joinInfoRef) {
     sendProfileRef.current = (profile) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "update_profile", ...profile }));
+      }
+    };
+
+    sendDmRef.current = (to, text) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "dm", to, text }));
+      }
+    };
+
+    requestHistoryRef.current = (withId) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "dm_history", with: withId }));
       }
     };
 
@@ -71,6 +86,24 @@ export function useOfficeSocket(world, joinInfoRef) {
         // Stored desk no longer exists — force the user back to the join form
         localStorage.removeItem("deskId");
         window.location.reload();
+      } else if (msg.type === "dm") {
+        // Both the sender's echo and the recipient's copy land here
+        const peerId = msg.from === world.myId ? msg.to : msg.from;
+        chatRef.current?.onMessage?.(peerId, {
+          mine: msg.from === world.myId,
+          body: msg.body,
+          createdAt: msg.createdAt,
+        });
+      } else if (msg.type === "dm_history") {
+        const myDesk = world.myDeskId;
+        chatRef.current?.onHistory?.(
+          msg.with,
+          msg.messages.map((m) => ({
+            mine: m.fromDesk === myDesk,
+            body: m.body,
+            createdAt: m.createdAt,
+          }))
+        );
       } else if (msg.type === "leave") {
         world.removePlayer(msg.id);
       }
@@ -79,9 +112,11 @@ export function useOfficeSocket(world, joinInfoRef) {
     return () => {
       sendMoveRef.current = () => {};
       sendProfileRef.current = () => {};
+      sendDmRef.current = () => {};
+      requestHistoryRef.current = () => {};
       ws.close();
     };
-  }, [world, joinInfoRef]);
+  }, [world, joinInfoRef, chatRef]);
 
-  return { sendMoveRef, sendProfileRef };
+  return { sendMoveRef, sendProfileRef, sendDmRef, requestHistoryRef };
 }

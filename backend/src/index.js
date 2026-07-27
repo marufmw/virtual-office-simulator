@@ -5,6 +5,7 @@ const db = require("./db");
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
+const MAX_MESSAGE_LENGTH = 1000;
 
 // HTTP server (only serves the desk list; everything else is WebSocket)
 const server = http.createServer((req, res) => {
@@ -157,6 +158,44 @@ wss.on("connection", (ws) => {
 
       db.updateProfile(oldDeskId, { deskId, name: player.name, character: player.character });
       broadcast({ type: "update", player: publicPlayer(id, player) });
+      return;
+    }
+
+    // One-on-one text message to another connected player
+    if (msg.type === "dm") {
+      const target = players.get(msg.to);
+      const body = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
+      if (!target || !body || msg.to === id) return;
+
+      const createdAt = Date.now();
+      db.saveMessage(player.deskId, target.deskId, body, createdAt);
+
+      // Echo to the sender too, so both sides render the same record
+      const envelope = JSON.stringify({
+        type: "dm",
+        from: id,
+        to: msg.to,
+        fromDesk: player.deskId,
+        toDesk: target.deskId,
+        body,
+        createdAt,
+      });
+      ws.send(envelope);
+      if (target.ws.readyState === 1) target.ws.send(envelope);
+      return;
+    }
+
+    // Chat history with another player, requested when a chat opens
+    if (msg.type === "dm_history") {
+      const target = players.get(msg.with);
+      if (!target) return;
+      ws.send(
+        JSON.stringify({
+          type: "dm_history",
+          with: msg.with,
+          messages: db.loadConversation(player.deskId, target.deskId),
+        })
+      );
       return;
     }
 
