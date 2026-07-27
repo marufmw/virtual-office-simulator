@@ -127,6 +127,23 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (msg.type === "update_profile") {
+      const oldDeskId = player.deskId;
+      // A desk ID taken by another record can't be claimed
+      const requested =
+        typeof msg.deskId === "string" && msg.deskId ? msg.deskId : oldDeskId;
+      const deskId =
+        requested !== oldDeskId && db.getPlayer(requested) ? oldDeskId : requested;
+
+      player.name = typeof msg.name === "string" && msg.name ? msg.name : player.name;
+      player.character = CHARACTERS.includes(msg.character) ? msg.character : player.character;
+      player.deskId = deskId;
+
+      db.updateProfile(oldDeskId, { deskId, name: player.name, character: player.character });
+      broadcast({ type: "update", player: publicPlayer(id, player) });
+      return;
+    }
+
     if (msg.type === "move" && typeof msg.x === "number" && typeof msg.y === "number") {
       if (collides(msg.x, msg.y, id)) {
         // Reject: send the authoritative position back so the client snaps to it

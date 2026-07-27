@@ -27,10 +27,16 @@ export function createNameLabel(text) {
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
+    depthTest: false,  // Ignore depth buffer
+    depthWrite: false, // Don't write to depth buffer
   });
 
+  
+  
   const sprite = new THREE.Sprite(material);
-
+  // Render after everything else
+  sprite.renderOrder = 9999;
+  
   // Make the label much larger in the world
   sprite.scale.set(4, 1, 1);
 

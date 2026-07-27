@@ -4,12 +4,24 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { useOfficeSocket } from "./hooks/useOfficeSocket";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { JoinForm } from "./components/JoinForm";
+import { SettingsButton } from "./components/SettingsButton";
 
-function Office({ world, joinInfo }) {
+function Office({ world, joinInfo, onProfileChange }) {
   const keysRef = useKeyboard();
-  const sendMoveRef = useOfficeSocket(world, joinInfo);
+  const joinInfoRef = useRef(joinInfo);
+  joinInfoRef.current = joinInfo;
+  const { sendMoveRef, sendProfileRef } = useOfficeSocket(world, joinInfoRef);
   useGameLoop(world, keysRef, sendMoveRef);
-  return null;
+
+  return (
+    <SettingsButton
+      joinInfo={joinInfo}
+      onSave={(profile) => {
+        sendProfileRef.current(profile);
+        onProfileChange(profile);
+      }}
+    />
+  );
 }
 
 function App() {
@@ -18,7 +30,7 @@ function App() {
   const [joinInfo, setJoinInfo] = useState(() => {
     const deskId = localStorage.getItem("deskId");
     const name = localStorage.getItem("name");
-    return deskId ? { deskId, name } : null;
+    return deskId ? { deskId, name, character: localStorage.getItem("character") } : null;
   });
 
   useEffect(() => {
@@ -27,17 +39,20 @@ function App() {
     return () => w.dispose();
   }, []);
 
-  function handleJoin(info) {
-    localStorage.setItem("deskId", info.deskId);
-    localStorage.setItem("name", info.name);
-    setJoinInfo(info);
+  function handleProfileChange(profile) {
+    localStorage.setItem("deskId", profile.deskId);
+    localStorage.setItem("name", profile.name);
+    localStorage.setItem("character", profile.character);
+    setJoinInfo((prev) => ({ ...prev, ...profile }));
   }
 
   return (
     <>
       <div ref={mountRef} />
-      {world && joinInfo && <Office world={world} joinInfo={joinInfo} />}
-      {world && !joinInfo && <JoinForm onJoin={handleJoin} />}
+      {world && joinInfo && (
+        <Office world={world} joinInfo={joinInfo} onProfileChange={handleProfileChange} />
+      )}
+      {world && !joinInfo && <JoinForm onJoin={handleProfileChange} />}
     </>
   );
 }

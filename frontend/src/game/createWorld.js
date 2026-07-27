@@ -100,6 +100,16 @@ export function createWorld(container) {
       }
     },
 
+    // Rebuilds a player's visuals (name label, character) in place,
+    // keeping their current position
+    updatePlayer(id, { x, y, character, name }) {
+      const player = players.get(id);
+      if (!player) return;
+      const { x: px, y: py } = player.group.position;
+      world.removePlayer(id);
+      world.addPlayer(id, x ?? px, y ?? py, character, name);
+    },
+
     resize() {
       const aspect = window.innerWidth / window.innerHeight;
       camera.left = -VIEW_SIZE * aspect;

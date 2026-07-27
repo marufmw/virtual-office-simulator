@@ -33,5 +33,10 @@ module.exports = {
 
   savePosition: (deskId, x, y) => updatePosStmt.run(x, y, deskId),
 
+  updateProfile: (oldDeskId, { deskId, name, character }) =>
+    db
+      .prepare("UPDATE players SET desk_id = ?, name = ?, character = ? WHERE desk_id = ?")
+      .run(deskId, name, character, oldDeskId),
+
   loadPlayers: () => db.prepare("SELECT * FROM players").all(),
 };
