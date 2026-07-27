@@ -1,0 +1,17 @@
+{
+  "name": "virtual-office-simulator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix frontend\" \"npm start --prefix backend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm start --prefix backend"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}
