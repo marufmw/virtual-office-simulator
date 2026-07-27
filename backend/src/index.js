@@ -99,7 +99,11 @@ wss.on("connection", (ws) => {
       if (msg.type !== "hello" || typeof msg.deskId !== "string" || !msg.deskId) return;
 
       const desk = db.getDesk(msg.deskId);
-      if (!desk) return; // desk IDs come from the seeded set only
+      if (!desk) {
+        // desk IDs come from the seeded set only
+        ws.send(JSON.stringify({ type: "error", reason: "invalid_desk" }));
+        return;
+      }
 
       const existing = db.getPlayer(msg.deskId);
       let record;

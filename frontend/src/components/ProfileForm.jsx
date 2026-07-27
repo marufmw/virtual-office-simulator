@@ -45,7 +45,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   const [character, setCharacter] = useState(initial.character ?? CHARACTER_NAMES[0]);
   const [desks, setDesks] = useState(null);
 
-  // Desks are seeded on the backend; only unclaimed ones are selectable
+  // Desks are seeded on the backend; occupied ones prefill the profile
   useEffect(() => {
     fetch(`${API_URL}/api/desks`)
       .then((res) => res.json())
@@ -54,10 +54,25 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
         if (!initial.deskId) {
           const firstFree = data.find((d) => !d.occupant);
           if (firstFree) setDeskId(firstFree.id);
+        } else {
+          prefillFromDesk(initial.deskId, data);
         }
       })
       .catch(() => setDesks([]));
   }, [initial.deskId]);
+
+  function prefillFromDesk(id, list = desks) {
+    const desk = list?.find((d) => d.id === id);
+    if (desk?.occupant) {
+      setName(desk.occupant);
+      if (desk.occupant_character) setCharacter(desk.occupant_character);
+    }
+  }
+
+  function handleDeskChange(e) {
+    setDeskId(e.target.value);
+    prefillFromDesk(e.target.value);
+  }
 
   const canSubmit = name.trim() !== "" && deskId.trim() !== "";
 
@@ -86,18 +101,17 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
           <select
             className="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50"
             value={deskId}
-            onChange={(e) => setDeskId(e.target.value)}
+            onChange={handleDeskChange}
             disabled={desks === null}
           >
             {desks === null && <option value="">Loading desks…</option>}
             {desks?.length === 0 && <option value="">No desks available</option>}
             {desks?.map((d) => {
               const isMine = d.id === initial.deskId;
-              const taken = d.occupant && !isMine;
               return (
-                <option key={d.id} value={d.id} disabled={taken}>
+                <option key={d.id} value={d.id}>
                   Desk {d.id.replace("desk-", "#")}
-                  {taken ? ` — taken by ${d.occupant}` : isMine ? " — yours" : ""}
+                  {d.occupant ? ` — ${isMine ? "yours" : `taken by ${d.occupant}`}` : ""}
                 </option>
               );
             })}

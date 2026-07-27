@@ -3,6 +3,29 @@ import { VIEW_SIZE } from "../config";
 import { createAnimatedPlayer } from "./createAnimatedPlayer";
 import { createNameLabel } from "./createNameLabel";
 import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
+import { createPropMesh } from "./props";
+
+function makeTiledTexture(path) {
+  const texture = new THREE.TextureLoader().load(path);
+  texture.magFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+// Office room bounds (wall centerlines; walls are 2 units thick)
+const ROOM = { minX: -22, maxX: 22, minY: -15, maxY: 18 };
+const BRICK = 2; // world units per brick tile
+const TILE = 2; // world units per checker tile
+
+// Solid rectangles used for collision: [centerX, centerY, halfWidth, halfHeight]
+const WALL_COLLIDERS = [
+  [0, ROOM.maxY, Math.abs(ROOM.maxX) + 1, 1], // top
+  [0, ROOM.minY, Math.abs(ROOM.minX) + 1, 1], // bottom
+  [ROOM.minX, (ROOM.minY + ROOM.maxY) / 2, 1, (ROOM.maxY - ROOM.minY) / 2], // left
+  [ROOM.maxX, (ROOM.minY + ROOM.maxY) / 2, 1, (ROOM.maxY - ROOM.minY) / 2], // right
+];
 
 /**
  * Creates the game world: Three.js scene, camera, renderer and the
@@ -11,7 +34,7 @@ import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
  */
 export function createWorld(container) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1e1e2e);
+  scene.background = new THREE.Color(0x2b2b3d);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
   camera.position.z = 10;
@@ -19,10 +42,55 @@ export function createWorld(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   container.appendChild(renderer.domElement);
 
-  // Large enough to always cover the viewport; repositioned by updateGrid()
-  const grid = new THREE.GridHelper(120, 120, 0x444466, 0x333344);
-  grid.rotation.x = Math.PI / 2;
-  scene.add(grid);
+  // Brick ground everywhere outside the room (large static plane)
+  const brickTexture = makeTiledTexture("/sprites/office/brick.png");
+  brickTexture.repeat.set(120 / BRICK, 120 / BRICK);
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(120, 120),
+    new THREE.MeshBasicMaterial({ map: brickTexture, color: 0x777777 })
+  );
+  ground.position.z = -1;
+  scene.add(ground);
+
+  // Checker tiles only inside the room
+  const floorTexture = makeTiledTexture("/sprites/office/floor_tile.png");
+  const roomW = ROOM.maxX - ROOM.minX + BRICK; // tuck under the walls
+  const roomH = ROOM.maxY - ROOM.minY + BRICK;
+  floorTexture.repeat.set(roomW / TILE, roomH / TILE);
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(roomW, roomH),
+    new THREE.MeshBasicMaterial({ map: floorTexture })
+  );
+  floor.position.set((ROOM.minX + ROOM.maxX) / 2, (ROOM.minY + ROOM.maxY) / 2, -0.9);
+  scene.add(floor);
+
+  // Brick walls enclosing the office
+  for (let x = ROOM.minX; x <= ROOM.maxX; x += BRICK) {
+    for (const y of [ROOM.minY, ROOM.maxY]) {
+      const brick = createPropMesh("brick", BRICK);
+      brick.position.set(x, y, -0.4);
+      scene.add(brick);
+    }
+  }
+  for (let y = ROOM.minY; y <= ROOM.maxY; y += BRICK) {
+    for (const x of [ROOM.minX, ROOM.maxX]) {
+      const brick = createPropMesh("brick", BRICK);
+      brick.position.set(x, y, -0.4);
+      scene.add(brick);
+    }
+  }
+
+  // Wall-mounted decorations on the top wall
+  const wallProps = [
+    ["door", 2, 12, ROOM.maxY], // embedded in the wall
+    ["chart", 1.5, 0, ROOM.maxY], // hanging on the bricks
+    ["extinguisher", 0.5, 13.8, ROOM.maxY - 1.3], // standing at the wall base
+  ];
+  for (const [name, width, x, y] of wallProps) {
+    const prop = createPropMesh(name, width);
+    prop.position.set(x, y, -0.3);
+    scene.add(prop);
+  }
 
   const players = new Map(); // id -> { group, update, dispose, prevX, prevY }
   const desks = new Map(); // id -> { dispose }
@@ -97,14 +165,12 @@ export function createWorld(container) {
           return true;
         }
       }
+      for (const [cx, cy, hw, hh] of WALL_COLLIDERS) {
+        if (Math.abs(cx - x) < hw + 0.5 && Math.abs(cy - y) < hh + 0.5) {
+          return true;
+        }
+      }
       return false;
-    },
-
-    // Keeps the grid under the camera, snapped to whole units so the
-    // lines stay aligned — makes the grid appear infinite
-    updateGrid() {
-      grid.position.x = Math.round(camera.position.x);
-      grid.position.y = Math.round(camera.position.y);
     },
 
     removePlayer(id) {

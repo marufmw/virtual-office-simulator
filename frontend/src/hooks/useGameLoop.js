@@ -52,7 +52,6 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
       const delta = clock.getDelta();
       updateMovement(delta);
       updateCamera(delta);
-      world.updateGrid();
       world.updateAnimations(delta);
       world.renderer.render(world.scene, world.camera);
     }

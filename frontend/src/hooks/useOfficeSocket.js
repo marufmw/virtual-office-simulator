@@ -64,6 +64,10 @@ export function useOfficeSocket(world, joinInfoRef) {
         // Server rejected our move — snap back to the authoritative position
         world.myPos = { x: msg.x, y: msg.y };
         world.movePlayer(world.myId, msg.x, msg.y);
+      } else if (msg.type === "error" && msg.reason === "invalid_desk") {
+        // Stored desk no longer exists — force the user back to the join form
+        localStorage.removeItem("deskId");
+        window.location.reload();
       } else if (msg.type === "leave") {
         world.removePlayer(msg.id);
       }
