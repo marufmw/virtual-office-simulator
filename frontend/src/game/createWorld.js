@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { VIEW_SIZE } from "../config";
 import { createAnimatedPlayer } from "./createAnimatedPlayer";
 import { createNameLabel } from "./createNameLabel";
+import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
 
 /**
  * Creates the game world: Three.js scene, camera, renderer and the
@@ -24,6 +25,7 @@ export function createWorld(container) {
   scene.add(grid);
 
   const players = new Map(); // id -> { group, update, dispose, prevX, prevY }
+  const desks = new Map(); // id -> { dispose }
 
   const world = {
     scene,
@@ -32,6 +34,12 @@ export function createWorld(container) {
     players,
     myId: null,
     myPos: { x: 0, y: 0 },
+
+    addDesk(id, x, y) {
+      const desk = createDesk(id, x, y);
+      scene.add(desk.group);
+      desks.set(id, desk);
+    },
 
     addPlayer(id, x, y, character, name) {
       const player = createAnimatedPlayer(character);
@@ -71,12 +79,21 @@ export function createWorld(container) {
       }
     },
 
-    // AABB check against every other player (client-side prediction;
-    // the server stays authoritative)
+    // AABB check against every other player and every desk
+    // (client-side prediction; the server stays authoritative)
     collidesAt(x, y, exceptId = null) {
       for (const [pid, player] of players) {
         const pos = player.group.position;
         if (pid !== exceptId && Math.abs(pos.x - x) < 1 && Math.abs(pos.y - y) < 1) {
+          return true;
+        }
+      }
+      for (const desk of desks.values()) {
+        const pos = desk.group.position;
+        if (
+          Math.abs(pos.x - x) < DESK_WIDTH / 2 + 0.5 &&
+          Math.abs(pos.y - y) < DESK_HEIGHT / 2 + 0.5
+        ) {
           return true;
         }
       }
@@ -122,6 +139,11 @@ export function createWorld(container) {
 
     dispose() {
       for (const id of [...players.keys()]) world.removePlayer(id);
+      for (const desk of desks.values()) {
+        scene.remove(desk.group);
+        desk.dispose();
+      }
+      desks.clear();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },

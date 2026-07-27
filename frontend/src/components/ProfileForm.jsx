@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CHARACTER_CONFIGS, CHARACTER_NAMES } from "../game/createAnimatedPlayer";
+import { API_URL } from "../config";
 
 const PREVIEW_SIZE = 48;
 
@@ -42,6 +43,21 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   const [name, setName] = useState(initial.name ?? "");
   const [deskId, setDeskId] = useState(initial.deskId ?? "");
   const [character, setCharacter] = useState(initial.character ?? CHARACTER_NAMES[0]);
+  const [desks, setDesks] = useState(null);
+
+  // Desks are seeded on the backend; only unclaimed ones are selectable
+  useEffect(() => {
+    fetch(`${API_URL}/api/desks`)
+      .then((res) => res.json())
+      .then((data) => {
+        setDesks(data);
+        if (!initial.deskId) {
+          const firstFree = data.find((d) => !d.occupant);
+          if (firstFree) setDeskId(firstFree.id);
+        }
+      })
+      .catch(() => setDesks([]));
+  }, [initial.deskId]);
 
   const canSubmit = name.trim() !== "" && deskId.trim() !== "";
 
@@ -67,12 +83,25 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
-          <input
-            className="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 placeholder-slate-500 outline-none focus:border-emerald-500"
-            placeholder="Desk ID"
+          <select
+            className="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50"
             value={deskId}
             onChange={(e) => setDeskId(e.target.value)}
-          />
+            disabled={desks === null}
+          >
+            {desks === null && <option value="">Loading desks…</option>}
+            {desks?.length === 0 && <option value="">No desks available</option>}
+            {desks?.map((d) => {
+              const isMine = d.id === initial.deskId;
+              const taken = d.occupant && !isMine;
+              return (
+                <option key={d.id} value={d.id} disabled={taken}>
+                  Desk {d.id.replace("desk-", "#")}
+                  {taken ? ` — taken by ${d.occupant}` : isMine ? " — yours" : ""}
+                </option>
+              );
+            })}
+          </select>
         </div>
 
         <div>

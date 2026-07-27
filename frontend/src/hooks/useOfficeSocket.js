@@ -43,6 +43,9 @@ export function useOfficeSocket(world, joinInfoRef) {
 
       if (msg.type === "init") {
         world.myId = msg.id;
+        for (const d of msg.desks ?? []) {
+          world.addDesk(d.id, d.x, d.y);
+        }
         for (const p of msg.players) {
           world.addPlayer(p.id, p.x, p.y, p.character, p.name);
           if (p.id === world.myId) {

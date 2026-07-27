@@ -1,10 +1,26 @@
+const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
 
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
+const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 
-const wss = new WebSocketServer({ port: PORT });
+// HTTP server (only serves the desk list; everything else is WebSocket)
+const server = http.createServer((req, res) => {
+  if (req.url === "/api/desks") {
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(JSON.stringify(db.loadDesksWithStatus()));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+const wss = new WebSocketServer({ server });
 
 const players = new Map(); // sessionId -> { ws, deskId, name, x, y, character }
 let nextId = 1;
@@ -34,15 +50,6 @@ function collides(x, y, exceptId = null) {
     }
   }
   return false;
-}
-
-function findSpawn() {
-  for (let i = 0; i < 100; i++) {
-    const x = Math.floor(Math.random() * 10 - 5);
-    const y = Math.floor(Math.random() * 10 - 5);
-    if (!collides(x, y)) return { x, y };
-  }
-  return { x: 0, y: 0 };
 }
 
 function broadcast(data, exceptId = null) {
@@ -91,17 +98,20 @@ wss.on("connection", (ws) => {
       // First message must be the join handshake
       if (msg.type !== "hello" || typeof msg.deskId !== "string" || !msg.deskId) return;
 
+      const desk = db.getDesk(msg.deskId);
+      if (!desk) return; // desk IDs come from the seeded set only
+
       const existing = db.getPlayer(msg.deskId);
       let record;
       if (existing) {
         record = existing;
       } else {
         if (typeof msg.name !== "string" || !msg.name) return; // new desks need a name
-        const spawn = findSpawn();
         const character = CHARACTERS.includes(msg.character)
           ? msg.character
           : CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
-        record = db.createPlayer(msg.deskId, msg.name, character, spawn.x, spawn.y);
+        // New players start beside their designated desk
+        record = db.createPlayer(msg.deskId, msg.name, character, desk.x, desk.y + SPAWN_OFFSET_Y);
       }
 
       player = {
@@ -120,6 +130,7 @@ wss.on("connection", (ws) => {
         JSON.stringify({
           type: "init",
           id,
+          desks: db.loadDesks(),
           players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
         })
       );
@@ -129,11 +140,12 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "update_profile") {
       const oldDeskId = player.deskId;
-      // A desk ID taken by another record can't be claimed
-      const requested =
-        typeof msg.deskId === "string" && msg.deskId ? msg.deskId : oldDeskId;
+      // Only seeded, unclaimed desks can be taken
+      const requested = typeof msg.deskId === "string" && msg.deskId ? msg.deskId : oldDeskId;
       const deskId =
-        requested !== oldDeskId && db.getPlayer(requested) ? oldDeskId : requested;
+        requested !== oldDeskId && (!db.getDesk(requested) || db.getPlayer(requested))
+          ? oldDeskId
+          : requested;
 
       player.name = typeof msg.name === "string" && msg.name ? msg.name : player.name;
       player.character = CHARACTERS.includes(msg.character) ? msg.character : player.character;
@@ -165,4 +177,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log(`WebSocket server running on ws://localhost:${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT} (WebSocket on the same port)`);
+});
