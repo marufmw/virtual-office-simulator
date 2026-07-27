@@ -32,8 +32,8 @@ export function createWorld(container) {
     myId: null,
     myPos: { x: 0, y: 0 },
 
-    addPlayer(id, x, y) {
-      const player = createAnimatedPlayer();
+    addPlayer(id, x, y, character) {
+      const player = createAnimatedPlayer(character);
       player.sprite.position.set(x, y, 0);
       player.prevX = x;
       player.prevY = y;

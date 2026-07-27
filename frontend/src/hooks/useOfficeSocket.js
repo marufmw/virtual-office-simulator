@@ -23,11 +23,11 @@ export function useOfficeSocket(world) {
       if (msg.type === "init") {
         world.myId = msg.id;
         for (const p of msg.players) {
-          world.addPlayer(p.id, p.x, p.y, p.color);
+          world.addPlayer(p.id, p.x, p.y, p.character);
           if (p.id === world.myId) world.myPos = { x: p.x, y: p.y };
         }
       } else if (msg.type === "join") {
-        world.addPlayer(msg.player.id, msg.player.x, msg.player.y, msg.player.color);
+        world.addPlayer(msg.player.id, msg.player.x, msg.player.y, msg.player.character);
       } else if (msg.type === "move") {
         world.movePlayer(msg.id, msg.x, msg.y);
       } else if (msg.type === "position") {

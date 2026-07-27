@@ -8,6 +8,7 @@ const players = new Map(); // id -> { ws, x, y, color }
 let nextId = 1;
 
 const PLAYER_COLORS = ["#4caf50", "#2196f3", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4"];
+const CHARACTERS = ["character_1", "character_2"];
 const PLAYER_SIZE = 1; // square side length, used for AABB collision
 
 function collides(x, y, exceptId = null) {
@@ -43,21 +44,24 @@ wss.on("connection", (ws) => {
     ws,
     ...findSpawn(),
     color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
+    character: CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)],
   };
   players.set(id, player);
   console.log(`Player ${id} connected (${players.size} online)`);
+
+  const publicPlayer = (pid, p) => ({ id: pid, x: p.x, y: p.y, color: p.color, character: p.character });
 
   // Send the new client its id and the current state of all players
   ws.send(
     JSON.stringify({
       type: "init",
       id,
-      players: [...players].map(([pid, p]) => ({ id: pid, x: p.x, y: p.y, color: p.color })),
+      players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
     })
   );
 
   // Tell everyone else about the new player
-  broadcast({ type: "join", player: { id, x: player.x, y: player.y, color: player.color } }, id);
+  broadcast({ type: "join", player: publicPlayer(id, player) }, id);
 
   ws.on("message", (data) => {
     let msg;
