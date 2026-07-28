@@ -1,9 +1,11 @@
 const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
+const { createHuddleStore } = require("./huddles");
 
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
+const HUDDLE_INTERVAL_MS = 200; // how often proximity groups are recomputed
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 const MAX_MESSAGE_LENGTH = 1000;
 
@@ -83,6 +85,34 @@ setInterval(() => {
   }
 }, SAVE_INTERVAL_MS);
 
+// --- Proximity group chat -------------------------------------------------
+
+const huddles = createHuddleStore();
+let worldMoved = true; // set whenever someone moves, joins or leaves
+
+// What a client needs to render a huddle it belongs to
+const huddlePayload = (huddle) => ({
+  type: "huddle",
+  huddleId: huddle ? huddle.id : null,
+  members: huddle
+    ? [...huddle.members].map((pid) => ({ id: pid, name: players.get(pid)?.name ?? "Someone" }))
+    : [],
+  messages: huddle ? huddle.messages : [],
+});
+
+// Recompute on a timer rather than per move: positions arrive at ~20 Hz per
+// player and only the resulting membership matters.
+setInterval(() => {
+  if (!worldMoved) return;
+  worldMoved = false;
+
+  const positions = [...players].map(([pid, p]) => [pid, { x: p.x, y: p.y }]);
+  for (const { playerId, huddle } of huddles.sync(positions)) {
+    const member = players.get(playerId);
+    if (member?.ws.readyState === 1) member.ws.send(JSON.stringify(huddlePayload(huddle)));
+  }
+}, HUDDLE_INTERVAL_MS);
+
 wss.on("connection", (ws) => {
   const id = nextId++;
   let player = null;
@@ -140,6 +170,7 @@ wss.on("connection", (ws) => {
         })
       );
       broadcast({ type: "join", player: publicPlayer(id, player) }, id);
+      worldMoved = true;
       return;
     }
 
@@ -185,6 +216,24 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    // Message to everyone standing in the same huddle
+    if (msg.type === "huddle_msg") {
+      const body = typeof msg.text === "string" ? msg.text.trim().slice(0, MAX_MESSAGE_LENGTH) : "";
+      if (!body) return;
+
+      const message = { fromId: id, fromName: player.name, body, createdAt: Date.now() };
+      // Null when they wandered off between typing and sending
+      const huddle = huddles.addMessage(id, message);
+      if (!huddle) return;
+
+      const envelope = JSON.stringify({ type: "huddle_msg", huddleId: huddle.id, ...message });
+      for (const pid of huddle.members) {
+        const member = players.get(pid);
+        if (member?.ws.readyState === 1) member.ws.send(envelope);
+      }
+      return;
+    }
+
     // Chat history with another player, requested when a chat opens
     if (msg.type === "dm_history") {
       const target = players.get(msg.with);
@@ -207,6 +256,7 @@ wss.on("connection", (ws) => {
       }
       player.x = msg.x;
       player.y = msg.y;
+      worldMoved = true;
       broadcast({ type: "move", id, x: player.x, y: player.y }, id);
     }
   });
@@ -214,6 +264,7 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     if (!player) return;
     players.delete(id);
+    worldMoved = true;
     db.savePosition(player.deskId, player.x, player.y);
     broadcast({ type: "leave", id });
     console.log(`Player ${player.name} (${player.deskId}) left (${players.size} online)`);

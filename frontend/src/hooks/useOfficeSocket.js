@@ -5,13 +5,15 @@ import { WS_URL } from "../config";
  * Manages the WebSocket connection and applies server messages to the
  * world. Sends the join handshake (hello) once the socket opens.
  * `joinInfoRef` is read lazily so profile changes don't reconnect.
- * `chatRef` holds `{ onMessage, onHistory }` callbacks, also read lazily.
- * Returns refs with `sendMove`, `sendProfile`, `sendDm` and `requestHistory`.
+ * `chatRef` holds `{ onMessage, onHistory, onHuddle, onHuddleMessage }`
+ * callbacks, also read lazily. Returns refs with `sendMove`, `sendProfile`,
+ * `sendDm`, `sendHuddle` and `requestHistory`.
  */
 export function useOfficeSocket(world, joinInfoRef, chatRef) {
   const sendMoveRef = useRef(() => {});
   const sendProfileRef = useRef(() => {});
   const sendDmRef = useRef(() => {});
+  const sendHuddleRef = useRef(() => {});
   const requestHistoryRef = useRef(() => {});
 
   useEffect(() => {
@@ -44,6 +46,12 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
     sendDmRef.current = (to, text) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "dm", to, text }));
+      }
+    };
+
+    sendHuddleRef.current = (text) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "huddle_msg", text }));
       }
     };
 
@@ -94,6 +102,29 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
           body: msg.body,
           createdAt: msg.createdAt,
         });
+      } else if (msg.type === "huddle") {
+        // Membership changed: joined a huddle, left one, or people moved
+        chatRef.current?.onHuddle?.(
+          msg.huddleId === null
+            ? null
+            : {
+                id: msg.huddleId,
+                members: msg.members,
+                messages: msg.messages.map((m) => ({
+                  mine: m.fromId === world.myId,
+                  from: m.fromName,
+                  body: m.body,
+                  createdAt: m.createdAt,
+                })),
+              }
+        );
+      } else if (msg.type === "huddle_msg") {
+        chatRef.current?.onHuddleMessage?.(msg.huddleId, {
+          mine: msg.fromId === world.myId,
+          from: msg.fromName,
+          body: msg.body,
+          createdAt: msg.createdAt,
+        });
       } else if (msg.type === "dm_history") {
         const myDesk = world.myDeskId;
         chatRef.current?.onHistory?.(
@@ -113,10 +144,11 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
       sendMoveRef.current = () => {};
       sendProfileRef.current = () => {};
       sendDmRef.current = () => {};
+      sendHuddleRef.current = () => {};
       requestHistoryRef.current = () => {};
       ws.close();
     };
   }, [world, joinInfoRef, chatRef]);
 
-  return { sendMoveRef, sendProfileRef, sendDmRef, requestHistoryRef };
+  return { sendMoveRef, sendProfileRef, sendDmRef, sendHuddleRef, requestHistoryRef };
 }
