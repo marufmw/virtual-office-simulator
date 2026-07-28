@@ -34,15 +34,41 @@ db.exec(`
     ON messages (from_desk, to_desk, created_at);
 `);
 
-// Seed the office: desks and their assigned users. Anything not in
-// these lists is wiped on startup.
+// Seed the office: the real floor plan, as a grid of [column, row].
+// Columns are 4 units apart, the three desk rows sit at ROW_Y.
+// Desks with a `name` get that user seeded; the rest stay free
+// (anonymous) for whoever joins first. Anything not listed here is
+// wiped on startup.
+const COLUMN_SPACING = 3.5; // keeps the outermost desks clear of the side walls
+const COLUMN_CENTER = 5; // column index that maps to x = 0
+const ROW_Y = { 0: 8, 1: -1, 2: -5.5 };
+
 const SEED = [
-  { deskId: "TB-113", name: "madhurja" },
-  { deskId: "TB-057", name: "Siam" },
-  { deskId: "TB-110", name: "Maruf" },
-  { deskId: "TB-109", name: "Rashed" },
-  { deskId: "TB-108", name: "Sidul" },
-  { deskId: "TB-107", name: "Asad" },
+  // back row
+  { deskId: "TB-046", col: 0, row: 0 },
+  { deskId: "TB-137", col: 1, row: 0 },
+  { deskId: "TB-113", col: 4, row: 0, name: "madhurja" },
+  { deskId: "TB-057", col: 5, row: 0, name: "Siam" },
+  { deskId: "TB-110", col: 6, row: 0, name: "Maruf" },
+  { deskId: "TB-109", col: 7, row: 0, name: "Rashed" },
+  { deskId: "TB-108", col: 9, row: 0, name: "Sidul" },
+  { deskId: "TB-107", col: 10, row: 0, name: "Asad" },
+  // middle row
+  { deskId: "TB-042", col: 3, row: 1 },
+  { deskId: "TB-073", col: 4, row: 1 },
+  { deskId: "TB-043", col: 5, row: 1 },
+  { deskId: "TB-136", col: 6, row: 1 },
+  { deskId: "TB-112", col: 7, row: 1 },
+  { deskId: "TB-111", col: 8, row: 1 },
+  { deskId: "TB-045", col: 9, row: 1 },
+  { deskId: "TB-142", col: 10, row: 1 },
+  // front row
+  { deskId: "TB-114", col: 0, row: 2 },
+  { deskId: "TB-105", col: 3, row: 2 },
+  { deskId: "TB-041", col: 4, row: 2 },
+  { deskId: "TB-040", col: 5, row: 2 },
+  { deskId: "TB-005", col: 6, row: 2 },
+  { deskId: "TB-044", col: 9, row: 2 },
 ];
 
 const SEED_CHARACTERS = [
@@ -55,12 +81,14 @@ const SEED_CHARACTERS = [
 
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 
-// Desk layout: rows of 3, 8 units apart
 const upsertDesk = db.prepare("INSERT OR REPLACE INTO desks (id, x, y) VALUES (?, ?, ?)");
-const seedDeskPos = (i) => ({ x: (i % 3) * 8 - 8, y: Math.floor(i / 3) * 8 - 4 });
-SEED.forEach(({ deskId }, i) => {
-  const { x, y } = seedDeskPos(i);
-  upsertDesk.run(deskId, x, y);
+const seedDeskPos = ({ col, row }) => ({
+  x: (col - COLUMN_CENTER) * COLUMN_SPACING,
+  y: ROW_Y[row],
+});
+SEED.forEach((seat) => {
+  const { x, y } = seedDeskPos(seat);
+  upsertDesk.run(seat.deskId, x, y);
 });
 
 // Remove desks and players that are not part of the seed
@@ -77,11 +105,16 @@ const getStmt = db.prepare("SELECT * FROM players WHERE desk_id = ?");
 const insertStmt = db.prepare(
   "INSERT INTO players (desk_id, name, character, x, y) VALUES (?, ?, ?, ?, ?)"
 );
-SEED.forEach(({ deskId, name }, i) => {
-  if (!getStmt.get(deskId)) {
-    const { x, y } = seedDeskPos(i);
-    insertStmt.run(deskId, name, SEED_CHARACTERS[i % SEED_CHARACTERS.length], x, y + SPAWN_OFFSET_Y);
-  }
+SEED.forEach((seat, i) => {
+  if (!seat.name || getStmt.get(seat.deskId)) return;
+  const { x, y } = seedDeskPos(seat);
+  insertStmt.run(
+    seat.deskId,
+    seat.name,
+    SEED_CHARACTERS[i % SEED_CHARACTERS.length],
+    x,
+    y + SPAWN_OFFSET_Y
+  );
 });
 
 const updatePosStmt = db.prepare("UPDATE players SET x = ?, y = ? WHERE desk_id = ?");
