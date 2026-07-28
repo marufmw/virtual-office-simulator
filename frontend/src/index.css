@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/**
+ * Tokens taken from the office itself: the room's floor colour, the slate
+ * of a desk plate, and two accents that each mean exactly one thing —
+ * tungsten for "someone is sitting here", sky for "this is your pick".
+ */
+@theme {
+  --color-ink: #12141d;
+  --color-room: #262b3b;
+  --color-plate: #343b50;
+  --color-line: #454d68;
+  --color-lit: #f5b544;
+  --color-pick: #38bdf8;
+  --color-paper: #e8ecf7;
+  --color-muted: #8d97b4;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Desk codes and other machine-ish labels */
+.code {
+  font-family: var(--font-code);
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

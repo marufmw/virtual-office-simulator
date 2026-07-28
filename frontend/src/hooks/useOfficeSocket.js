@@ -102,6 +102,15 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
           body: msg.body,
           createdAt: msg.createdAt,
         });
+      } else if (msg.type === "desk_added") {
+        world.addDesk(msg.desk.id, msg.desk.x, msg.desk.y);
+      } else if (msg.type === "desk_moved") {
+        world.moveDesk(msg.id, msg.x, msg.y);
+      } else if (msg.type === "desk_removed") {
+        world.removeDesk(msg.id);
+      } else if (msg.type === "layout_reset") {
+        // The whole office was rebuilt — start from a clean slate
+        window.location.reload();
       } else if (msg.type === "huddle") {
         // Membership changed: joined a huddle, left one, or people moved
         chatRef.current?.onHuddle?.(

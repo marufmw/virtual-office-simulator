@@ -1,0 +1,39 @@
+import { API_URL } from "../config";
+
+/**
+ * Floor-plan editing calls. Each resolves to `{ ok, data }` or
+ * `{ ok: false, error }` with a message written for the person editing,
+ * so callers can show it as-is.
+ */
+async function request(path, options) {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: data.error ?? "That didn't work" };
+    return { ok: true, data };
+  } catch {
+    return { ok: false, error: "The office isn't answering" };
+  }
+}
+
+export const fetchDesks = () => request("/api/desks", { method: "GET" });
+
+export const createDesk = (id, x, y) =>
+  request("/api/desks", { method: "POST", body: JSON.stringify({ id, x, y }) });
+
+export const moveDesk = (id, x, y) =>
+  request(`/api/desks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ x, y }),
+  });
+
+export const deleteDesk = (id) =>
+  request(`/api/desks/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export const reseatPerson = (fromDeskId, toDeskId) =>
+  request("/api/reseat", { method: "POST", body: JSON.stringify({ fromDeskId, toDeskId }) });
+
+export const resetLayout = () => request("/api/layout/reset", { method: "POST" });

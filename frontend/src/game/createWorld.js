@@ -219,6 +219,19 @@ export function createWorld(container) {
       desks.set(id, desk);
     },
 
+    // Live floor-plan edits from the layout editor
+    moveDesk(id, x, y) {
+      desks.get(id)?.group.position.set(x, y, 0);
+    },
+
+    removeDesk(id) {
+      const desk = desks.get(id);
+      if (!desk) return;
+      scene.remove(desk.group);
+      desk.dispose();
+      desks.delete(id);
+    },
+
     addPlayer(id, x, y, character, name) {
       const player = createAnimatedPlayer(character);
       const group = new THREE.Group();

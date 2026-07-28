@@ -3,9 +3,9 @@ import { ProfileForm } from "./ProfileForm";
 export function JoinForm({ onJoin }) {
   return (
     <ProfileForm
-      title="Join the office"
+      title="Take a desk"
       initial={{}}
-      submitLabel="Join"
+      submitLabel="Walk in"
       onSubmit={onJoin}
     />
   );

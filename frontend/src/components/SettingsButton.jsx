@@ -20,13 +20,13 @@ export function SettingsButton({ joinInfo, onSave }) {
       </button>
       {open && (
         <ProfileForm
-          title="Settings"
+          title="Your desk"
           initial={{
             name: joinInfo.name,
             deskId: joinInfo.deskId,
             character: localStorage.getItem("character") ?? undefined,
           }}
-          submitLabel="Save"
+          submitLabel="Save changes"
           onSubmit={(profile) => {
             onSave(profile);
             setOpen(false);

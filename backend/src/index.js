@@ -2,6 +2,7 @@ const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
 const { createHuddleStore } = require("./huddles");
+const { validateNewDesk, validateMove, validateReseat } = require("./layout");
 
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
@@ -9,19 +10,143 @@ const HUDDLE_INTERVAL_MS = 200; // how often proximity groups are recomputed
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 const MAX_MESSAGE_LENGTH = 1000;
 
-// HTTP server (only serves the desk list; everything else is WebSocket)
-const server = http.createServer((req, res) => {
-  if (req.url === "/api/desks") {
-    res.writeHead(200, {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
+// HTTP server: the desk list and floor-plan editing. Everything that
+// happens once you're in the room is WebSocket.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+const send = (res, status, body) => {
+  res.writeHead(status, { "Content-Type": "application/json", ...CORS });
+  res.end(JSON.stringify(body));
+};
+
+function readJson(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+      if (raw.length > 8192) req.destroy(); // nothing legitimate is this big
     });
-    res.end(JSON.stringify(db.loadDesksWithStatus()));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        resolve(null);
+      }
+    });
+    req.on("error", () => resolve(null));
+  });
+}
+
+// A failed request must never take the office down with it
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch((error) => {
+    console.error(`${req.method} ${req.url} failed:`, error);
+    if (!res.headersSent) send(res, 500, { error: "The office hit a snag" });
+  });
+});
+
+async function handleRequest(req, res) {
+  const url = new URL(req.url, "http://localhost");
+  const path = url.pathname;
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS);
+    res.end();
     return;
   }
-  res.writeHead(404);
-  res.end();
-});
+
+  if (path === "/api/desks" && req.method === "GET") {
+    send(res, 200, db.loadDesksWithStatus());
+    return;
+  }
+
+  if (path === "/api/desks" && req.method === "POST") {
+    const body = (await readJson(req)) ?? {};
+    const check = validateNewDesk(body, db.loadDesks());
+    if (!check.ok) return send(res, 400, { error: check.error });
+
+    const desk = db.addDesk(check.value.id, check.value.x, check.value.y);
+    broadcast({ type: "desk_added", desk });
+    return send(res, 201, desk);
+  }
+
+  const deskMatch = path.match(/^\/api\/desks\/([^/]+)$/);
+  if (deskMatch && req.method === "PATCH") {
+    const id = decodeURIComponent(deskMatch[1]);
+    const body = (await readJson(req)) ?? {};
+    const check = validateMove({ id, x: body.x, y: body.y }, db.loadDesks());
+    if (!check.ok) return send(res, 400, { error: check.error });
+
+    const { x, y } = check.value;
+    db.moveDesk(id, x, y);
+    // The occupant rides along, so a connected one has to be told where
+    // they now stand
+    const seated = onlinePlayerAtDesk(id);
+    if (seated) {
+      seated.player.x = x;
+      seated.player.y = y + SPAWN_OFFSET_Y;
+      worldMoved = true;
+      broadcast({ type: "move", id: seated.id, x: seated.player.x, y: seated.player.y });
+    }
+    broadcast({ type: "desk_moved", id, x, y });
+    return send(res, 200, { id, x, y });
+  }
+
+  if (deskMatch && req.method === "DELETE") {
+    const id = decodeURIComponent(deskMatch[1]);
+    if (!db.getDesk(id)) return send(res, 404, { error: "That desk is gone" });
+    if (db.getPlayer(id)) return send(res, 409, { error: "Move whoever sits there first" });
+
+    db.removeDesk(id);
+    broadcast({ type: "desk_removed", id });
+    return send(res, 200, { id });
+  }
+
+  if (path === "/api/reseat" && req.method === "POST") {
+    const body = (await readJson(req)) ?? {};
+    const check = validateReseat(body, db.loadDesks(), (deskId) => Boolean(db.getPlayer(deskId)));
+    if (!check.ok) return send(res, 400, { error: check.error });
+
+    const { fromDeskId, toDeskId, swap } = check.value;
+    // Sessions have to be looked up before the desk ids move underneath them
+    const mover = onlinePlayerAtDesk(fromDeskId);
+    const displaced = swap ? onlinePlayerAtDesk(toDeskId) : null;
+
+    const applyTo = (session, record) => {
+      if (!session || !record) return;
+      session.player.deskId = record.desk_id;
+      session.player.x = record.x;
+      session.player.y = record.y;
+      worldMoved = true;
+      broadcast({ type: "update", player: publicPlayer(session.id, session.player) });
+    };
+
+    if (swap) {
+      const seats = db.swapSeats(fromDeskId, toDeskId);
+      if (!seats) return send(res, 409, { error: "Those seats just changed" });
+      applyTo(mover, seats[toDeskId]);
+      applyTo(displaced, seats[fromDeskId]);
+    } else {
+      applyTo(mover, db.reseatPlayer(fromDeskId, toDeskId));
+    }
+
+    return send(res, 200, { fromDeskId, toDeskId, swapped: swap });
+  }
+
+  if (path === "/api/layout/reset" && req.method === "POST") {
+    db.resetLayout();
+    // Everyone's seat just changed underneath them; simplest honest thing
+    // is to have the clients reload into the fresh office
+    broadcast({ type: "layout_reset" });
+    return send(res, 200, { desks: db.loadDesksWithStatus() });
+  }
+
+  send(res, 404, { error: "Not found" });
+}
 
 const wss = new WebSocketServer({ server });
 
@@ -62,6 +187,15 @@ function broadcast(data, exceptId = null) {
       player.ws.send(message);
     }
   }
+}
+
+// The connected session sitting at a desk, if that person happens to be
+// online right now — desks can also be edited while their owner is away
+function onlinePlayerAtDesk(deskId) {
+  for (const [pid, p] of players) {
+    if (p.deskId === deskId) return { id: pid, player: p };
+  }
+  return null;
 }
 
 const publicPlayer = (pid, p) => ({
