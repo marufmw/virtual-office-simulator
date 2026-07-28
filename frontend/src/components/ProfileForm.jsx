@@ -4,6 +4,7 @@ import { CHARACTER_NAMES } from "../game/createAnimatedPlayer";
 import { CharacterPreview } from "./CharacterPreview";
 import { DeskMap } from "./DeskMap";
 import * as layout from "../api/layout";
+import { DEFAULT_ROOM, growRoom } from "../game/roomBounds";
 import { API_URL } from "../config";
 
 /**
@@ -17,6 +18,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   const [deskId, setDeskId] = useState(initial.deskId ?? "");
   const [character, setCharacter] = useState(initial.character ?? CHARACTER_NAMES[0]);
   const [desks, setDesks] = useState(null); // null while loading
+  const [room, setRoom] = useState(DEFAULT_ROOM);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [problem, setProblem] = useState(null); // why the last edit was refused
@@ -37,11 +39,12 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API_URL}/api/desks`)
+    fetch(`${API_URL}/api/office`)
       .then((res) => res.json())
-      .then((data) => {
+      .then(({ room: loadedRoom, desks: data }) => {
         if (cancelled) return;
         setDesks(data);
+        setRoom(loadedRoom ?? DEFAULT_ROOM);
         // Only preselect when editing an existing profile
         if (initial.deskId) {
           setDeskId(initial.deskId);
@@ -63,27 +66,40 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
    * Applies a layout edit straight away so dragging feels immediate, then
    * puts the old floor plan back if the server refuses it.
    */
-  async function edit(optimistic, call) {
-    const before = desks;
+  async function edit(optimistic, call, optimisticRoom) {
+    const beforeDesks = desks;
+    const beforeRoom = room;
     setDesks(optimistic);
+    if (optimisticRoom) setRoom(optimisticRoom);
     setProblem(null);
+
     const result = await call();
     if (!result.ok) {
-      setDesks(before);
+      setDesks(beforeDesks);
+      setRoom(beforeRoom);
       setProblem(result.error);
+      return;
     }
+    // The server decides the room; a desk pushed outward will have grown it
+    if (result.data?.room) setRoom(result.data.room);
   }
 
   const handleMove = (id, x, y) =>
     edit(
       desks.map((d) => (d.id === id ? { ...d, x, y } : d)),
-      () => layout.moveDesk(id, x, y)
+      () => layout.moveDesk(id, x, y),
+      growRoom(room, x, y)
     );
 
   const handleAdd = (id, x, y) =>
-    edit([...desks, { id, x, y, occupant: null, occupant_character: null }], () =>
-      layout.createDesk(id, x, y)
+    edit(
+      [...desks, { id, x, y, occupant: null, occupant_character: null }],
+      () => layout.createDesk(id, x, y),
+      growRoom(room, x, y)
     );
+
+  // Dragging a wall by hand, which may shrink the office as well as grow it
+  const handleResizeRoom = (next) => edit(desks, () => layout.setRoom(next), next);
 
   const handleDelete = (id) => {
     if (id === deskId) setDeskId("");
@@ -125,6 +141,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
       return;
     }
     setDesks(result.data.desks);
+    setRoom(result.data.room ?? DEFAULT_ROOM);
     setDeskId("");
     setName("");
     setProblem(null);
@@ -154,7 +171,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             </h1>
             <p className="mt-1 text-sm text-muted">
               {editing
-                ? "Drag desks to move them, drag a nameplate to reseat someone, click open floor to add a desk."
+                ? "Drag desks to move them, or a wall to resize the office. Push a desk at a wall and the room grows; drag a nameplate onto someone to swap seats."
                 : "Pick where you want to sit."}
             </p>
           </div>
@@ -216,6 +233,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             ) : (
               <DeskMap
                 desks={desks}
+                room={room}
                 value={deskId}
                 onChange={(id) => {
                   setDeskId(id);
@@ -226,6 +244,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
                 onAdd={handleAdd}
                 onDelete={handleDelete}
                 onReseat={handleReseat}
+                onResizeRoom={handleResizeRoom}
               />
             )}
 

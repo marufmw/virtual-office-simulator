@@ -7,6 +7,7 @@ import {
   ARRIVE_DISTANCE,
   WAYPOINT_DISTANCE,
   STUCK_TIMEOUT,
+  STRANDED_CHECK,
 } from "../config";
 
 /**
@@ -20,6 +21,7 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
     let positionDirty = false;
     let stuckTimer = 0; // how long an auto-walk has made no progress
     let lastDistance = Infinity;
+    let strandedTimer = 0;
 
     function updateMovement(delta) {
       const keys = keysRef.current;
@@ -40,12 +42,17 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
         const dist = Math.hypot(tx, ty);
         const isLastLeg = !world.path || world.path.length <= 1;
         const reached = dist < (isLastLeg ? ARRIVE_DISTANCE : WAYPOINT_DISTANCE);
-        // Give up if we've spent too long without getting closer — e.g.
-        // someone else is standing on the spot in front of the desk
-        if (stuckTimer > STUCK_TIMEOUT) {
-          world.cancelPath();
-          stuckTimer = 0;
-        } else if (reached) {
+        // Too long without progress — a desk dropped on the route, or
+        // someone standing on the spot. Walk through everything instead
+        // of giving up, so the desk is always reachable.
+        if (stuckTimer > STUCK_TIMEOUT && !world.phasing) {
+          world.setPhasing(true);
+          // Head straight for the desk; the plotted detour is moot now
+          world.path = [world.path[world.path.length - 1]];
+          world.moveTarget = world.path[0];
+        }
+
+        if (reached) {
           world.advanceWaypoint();
           stuckTimer = 0;
           lastDistance = Infinity;
@@ -71,7 +78,11 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
         // (desks, other people) are walked around instead of stopping us.
         let nextX = x;
         let nextY = y;
-        if (!world.collidesAt(x + stepX, y + stepY, world.myId)) {
+        if (world.phasing) {
+          // Nothing blocks a phasing walk — that's the point of it
+          nextX = x + stepX;
+          nextY = y + stepY;
+        } else if (!world.collidesAt(x + stepX, y + stepY, world.myId)) {
           nextX = x + stepX;
           nextY = y + stepY;
         } else if (stepX !== 0 && !world.collidesAt(x + stepX, y, world.myId)) {
@@ -102,9 +113,27 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
 
       sendTimer += delta;
       if (positionDirty && sendTimer >= SEND_INTERVAL) {
-        sendMoveRef.current(world.myPos.x, world.myPos.y);
+        sendMoveRef.current(world.myPos.x, world.myPos.y, world.phasing);
         sendTimer = 0;
       }
+    }
+
+    /**
+     * Someone can end up inside a desk or outside the walls when the floor
+     * plan is edited around them. Send them back to their own desk; if the
+     * way is blocked, the stuck timer above eventually lets them phase
+     * through, so they always get out.
+     */
+    function rescueIfStranded(delta) {
+      strandedTimer += delta;
+      if (strandedTimer < STRANDED_CHECK) return;
+      strandedTimer = 0;
+
+      if (world.myId === null || world.moveTarget) return;
+      if (!world.isStranded(world.myPos.x, world.myPos.y)) return;
+
+      const desk = world.deskStandPosition(world.myDeskId);
+      if (desk) world.walkTo(desk);
     }
 
     function updateCamera(delta) {
@@ -116,6 +145,7 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
 
     function tick() {
       const delta = clock.getDelta();
+      rescueIfStranded(delta);
       updateMovement(delta);
       updateCamera(delta);
       world.updateAnimations(delta);

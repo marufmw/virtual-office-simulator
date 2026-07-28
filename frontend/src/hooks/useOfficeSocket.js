@@ -31,9 +31,11 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
       );
     };
 
-    sendMoveRef.current = (x, y) => {
+    sendMoveRef.current = (x, y, phasing = false) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "move", x, y }));
+        // `phasing` tells the server to skip its collision check, for
+        // someone walking out of a desk that was placed on top of them
+        ws.send(JSON.stringify({ type: "move", x, y, phasing }));
       }
     };
 
@@ -66,6 +68,7 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
 
       if (msg.type === "init") {
         world.myId = msg.id;
+        world.setRoom(msg.room);
         for (const d of msg.desks ?? []) {
           world.addDesk(d.id, d.x, d.y);
         }
@@ -102,6 +105,8 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
           body: msg.body,
           createdAt: msg.createdAt,
         });
+      } else if (msg.type === "room_resized") {
+        world.setRoom(msg.room);
       } else if (msg.type === "desk_added") {
         world.addDesk(msg.desk.id, msg.desk.x, msg.desk.y);
       } else if (msg.type === "desk_moved") {

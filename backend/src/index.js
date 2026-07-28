@@ -2,7 +2,13 @@ const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
 const { createHuddleStore } = require("./huddles");
-const { validateNewDesk, validateMove, validateReseat } = require("./layout");
+const {
+  validateNewDesk,
+  validateMove,
+  validateReseat,
+  validateRoom,
+  sameRoom,
+} = require("./layout");
 
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
@@ -42,6 +48,17 @@ function readJson(req) {
 }
 
 // A failed request must never take the office down with it
+/**
+ * Stores a room the layout rules asked for and tells everyone the walls
+ * moved. A no-op when the desk already fitted, which is the common case.
+ */
+function applyRoom(room) {
+  if (sameRoom(room, db.getRoom())) return room;
+  db.saveRoom(room);
+  broadcast({ type: "room_resized", room });
+  return room;
+}
+
 const server = http.createServer((req, res) => {
   handleRequest(req, res).catch((error) => {
     console.error(`${req.method} ${req.url} failed:`, error);
@@ -59,6 +76,12 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // The whole floor plan: the room's walls plus every desk in it
+  if (path === "/api/office" && req.method === "GET") {
+    send(res, 200, { room: db.getRoom(), desks: db.loadDesksWithStatus() });
+    return;
+  }
+
   if (path === "/api/desks" && req.method === "GET") {
     send(res, 200, db.loadDesksWithStatus());
     return;
@@ -66,22 +89,35 @@ async function handleRequest(req, res) {
 
   if (path === "/api/desks" && req.method === "POST") {
     const body = (await readJson(req)) ?? {};
-    const check = validateNewDesk(body, db.loadDesks());
+    const check = validateNewDesk(body, db.loadDesks(), db.getRoom());
     if (!check.ok) return send(res, 400, { error: check.error });
 
+    const room = applyRoom(check.value.room);
     const desk = db.addDesk(check.value.id, check.value.x, check.value.y);
     broadcast({ type: "desk_added", desk });
-    return send(res, 201, desk);
+    return send(res, 201, { ...desk, room });
+  }
+
+  // Resizing the walls by hand, which — unlike dragging a desk — may
+  // also shrink the office
+  if (path === "/api/room" && req.method === "PATCH") {
+    const body = (await readJson(req)) ?? {};
+    const check = validateRoom(body, db.loadDesks());
+    if (!check.ok) return send(res, 400, { error: check.error });
+
+    const room = applyRoom(check.value);
+    return send(res, 200, { room });
   }
 
   const deskMatch = path.match(/^\/api\/desks\/([^/]+)$/);
   if (deskMatch && req.method === "PATCH") {
     const id = decodeURIComponent(deskMatch[1]);
     const body = (await readJson(req)) ?? {};
-    const check = validateMove({ id, x: body.x, y: body.y }, db.loadDesks());
+    const check = validateMove({ id, x: body.x, y: body.y }, db.loadDesks(), db.getRoom());
     if (!check.ok) return send(res, 400, { error: check.error });
 
     const { x, y } = check.value;
+    const room = applyRoom(check.value.room);
     db.moveDesk(id, x, y);
     // The occupant rides along, so a connected one has to be told where
     // they now stand
@@ -93,7 +129,7 @@ async function handleRequest(req, res) {
       broadcast({ type: "move", id: seated.id, x: seated.player.x, y: seated.player.y });
     }
     broadcast({ type: "desk_moved", id, x, y });
-    return send(res, 200, { id, x, y });
+    return send(res, 200, { id, x, y, room });
   }
 
   if (deskMatch && req.method === "DELETE") {
@@ -142,7 +178,7 @@ async function handleRequest(req, res) {
     // Everyone's seat just changed underneath them; simplest honest thing
     // is to have the clients reload into the fresh office
     broadcast({ type: "layout_reset" });
-    return send(res, 200, { desks: db.loadDesksWithStatus() });
+    return send(res, 200, { room: db.getRoom(), desks: db.loadDesksWithStatus() });
   }
 
   send(res, 404, { error: "Not found" });
@@ -178,6 +214,62 @@ function collides(x, y, exceptId = null) {
     }
   }
   return false;
+}
+
+/**
+ * The nearest spot to (x, y) where somebody can actually stand: not on
+ * another person, not inside a desk, not in a wall. Searched outward in
+ * rings so the person is nudged as little as possible.
+ */
+function freeSpotNear(x, y, exceptId) {
+  const desks = db.loadDesks();
+  const room = db.getRoom();
+  const inset = 1.5; // half a desk plus the player's own half-width
+
+  const blocked = (px, py) =>
+    px < room.minX + inset ||
+    px > room.maxX - inset ||
+    py < room.minY + inset ||
+    py > room.maxY - inset ||
+    collides(px, py, exceptId) ||
+    desks.some((d) => Math.abs(d.x - px) < inset && Math.abs(d.y - py) < inset);
+
+  for (let ring = 1; ring <= 15; ring++) {
+    for (let step = 0; step < 16; step++) {
+      const angle = (step / 16) * Math.PI * 2;
+      const px = x + Math.cos(angle) * ring * 1.2;
+      const py = y + Math.sin(angle) * ring * 1.2;
+      if (!blocked(px, py)) return { x: px, y: py };
+    }
+  }
+  return null;
+}
+
+/**
+ * Moves anyone standing where `id` has forced their way to. Someone
+ * parked on your desk gets stepped aside rather than blocking you out of
+ * your own seat forever.
+ */
+function displaceOthers(id, x, y) {
+  for (const [pid, other] of players) {
+    if (pid === id) continue;
+    if (Math.abs(other.x - x) >= PLAYER_SIZE || Math.abs(other.y - y) >= PLAYER_SIZE) continue;
+
+    const spot = freeSpotNear(other.x, other.y, pid);
+    if (!spot) continue;
+
+    other.x = spot.x;
+    other.y = spot.y;
+    db.savePosition(other.deskId, spot.x, spot.y);
+    worldMoved = true;
+    // The person being moved needs the authoritative form, or their own
+    // client will walk straight back from where it thinks it is
+    if (other.ws.readyState === 1) {
+      other.ws.send(JSON.stringify({ type: "position", x: spot.x, y: spot.y }));
+    }
+    broadcast({ type: "move", id: pid, x: spot.x, y: spot.y }, pid);
+    console.log(`${other.name} was stepped aside by ${players.get(id)?.name}`);
+  }
 }
 
 function broadcast(data, exceptId = null) {
@@ -299,6 +391,7 @@ wss.on("connection", (ws) => {
         JSON.stringify({
           type: "init",
           id,
+          room: db.getRoom(),
           desks: db.loadDesks(),
           players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
         })
@@ -383,7 +476,9 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "move" && typeof msg.x === "number" && typeof msg.y === "number") {
-      if (collides(msg.x, msg.y, id)) {
+      // Someone who has been stuck long enough walks through obstacles, so
+      // a desk dropped on top of them can't strand them forever
+      if (!msg.phasing && collides(msg.x, msg.y, id)) {
         // Reject: send the authoritative position back so the client snaps to it
         ws.send(JSON.stringify({ type: "position", x: player.x, y: player.y }));
         return;
@@ -391,6 +486,8 @@ wss.on("connection", (ws) => {
       player.x = msg.x;
       player.y = msg.y;
       worldMoved = true;
+      // Forcing through means anyone in the way gets stepped aside
+      if (msg.phasing) displaceOthers(id, player.x, player.y);
       broadcast({ type: "move", id, x: player.x, y: player.y }, id);
     }
   });

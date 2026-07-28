@@ -36,4 +36,8 @@ export const deleteDesk = (id) =>
 export const reseatPerson = (fromDeskId, toDeskId) =>
   request("/api/reseat", { method: "POST", body: JSON.stringify({ fromDeskId, toDeskId }) });
 
+// Resizing by hand, which unlike dragging a desk may also shrink the room
+export const setRoom = (room) =>
+  request("/api/room", { method: "PATCH", body: JSON.stringify(room) });
+
 export const resetLayout = () => request("/api/layout/reset", { method: "POST" });

@@ -5,6 +5,7 @@ import { createInteractIndicator } from "./createInteractIndicator";
 import { createNameLabel } from "./createNameLabel";
 import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
 import { createPathDots } from "./createPathDots";
+import { DEFAULT_ROOM } from "./roomBounds";
 import { findPath } from "./findPath";
 import { createPropMesh } from "./props";
 
@@ -17,18 +18,22 @@ function makeTiledTexture(path) {
   return texture;
 }
 
-// Office room bounds (wall centerlines; walls are 2 units thick)
-const ROOM = { minX: -22, maxX: 22, minY: -15, maxY: 18 };
 const BRICK = 2; // world units per brick tile
 const TILE = 2; // world units per checker tile
 
-// Solid rectangles used for collision: [centerX, centerY, halfWidth, halfHeight]
-const WALL_COLLIDERS = [
-  [0, ROOM.maxY, Math.abs(ROOM.maxX) + 1, 1], // top
-  [0, ROOM.minY, Math.abs(ROOM.minX) + 1, 1], // bottom
-  [ROOM.minX, (ROOM.minY + ROOM.maxY) / 2, 1, (ROOM.maxY - ROOM.minY) / 2], // left
-  [ROOM.maxX, (ROOM.minY + ROOM.maxY) / 2, 1, (ROOM.maxY - ROOM.minY) / 2], // right
-];
+// Solid rectangles for collision: [centerX, centerY, halfWidth, halfHeight]
+const wallCollidersFor = (room) => {
+  const midX = (room.minX + room.maxX) / 2;
+  const midY = (room.minY + room.maxY) / 2;
+  const halfW = (room.maxX - room.minX) / 2 + 1;
+  const halfH = (room.maxY - room.minY) / 2;
+  return [
+    [midX, room.maxY, halfW, 1], // top
+    [midX, room.minY, halfW, 1], // bottom
+    [room.minX, midY, 1, halfH], // left
+    [room.maxX, midY, 1, halfH], // right
+  ];
+};
 
 /**
  * Creates the game world: Three.js scene, camera, renderer and the
@@ -55,45 +60,61 @@ export function createWorld(container) {
   ground.position.z = -1;
   scene.add(ground);
 
-  // Checker tiles only inside the room
+  // Floor, walls and their fittings. Rebuilt whenever the room grows, so
+  // they live in one group that can be emptied wholesale.
   const floorTexture = makeTiledTexture("/sprites/office/floor_tile.png");
-  const roomW = ROOM.maxX - ROOM.minX + BRICK; // tuck under the walls
-  const roomH = ROOM.maxY - ROOM.minY + BRICK;
-  floorTexture.repeat.set(roomW / TILE, roomH / TILE);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(roomW, roomH),
-    new THREE.MeshBasicMaterial({ map: floorTexture })
-  );
-  floor.position.set((ROOM.minX + ROOM.maxX) / 2, (ROOM.minY + ROOM.maxY) / 2, -0.9);
-  scene.add(floor);
+  const roomGroup = new THREE.Group();
+  scene.add(roomGroup);
+  let room = DEFAULT_ROOM;
+  let wallColliders = wallCollidersFor(room);
 
-  // Brick walls enclosing the office
-  for (let x = ROOM.minX; x <= ROOM.maxX; x += BRICK) {
-    for (const y of [ROOM.minY, ROOM.maxY]) {
-      const brick = createPropMesh("brick", BRICK);
-      brick.position.set(x, y, -0.4);
-      scene.add(brick);
+  function buildRoom(bounds) {
+    roomGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      // The shared floor texture must outlive the rebuild
+      if (obj.material && obj.material !== floorMaterial) obj.material.dispose();
+    });
+    roomGroup.clear();
+
+    // Checker tiles only inside the room, tucked under the walls
+    const roomW = bounds.maxX - bounds.minX + BRICK;
+    const roomH = bounds.maxY - bounds.minY + BRICK;
+    floorTexture.repeat.set(roomW / TILE, roomH / TILE);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomH), floorMaterial);
+    floor.position.set((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, -0.9);
+    roomGroup.add(floor);
+
+    // Brick walls enclosing the office
+    for (let x = bounds.minX; x <= bounds.maxX; x += BRICK) {
+      for (const y of [bounds.minY, bounds.maxY]) {
+        const brick = createPropMesh("brick", BRICK);
+        brick.position.set(x, y, -0.4);
+        roomGroup.add(brick);
+      }
+    }
+    for (let y = bounds.minY; y <= bounds.maxY; y += BRICK) {
+      for (const x of [bounds.minX, bounds.maxX]) {
+        const brick = createPropMesh("brick", BRICK);
+        brick.position.set(x, y, -0.4);
+        roomGroup.add(brick);
+      }
+    }
+
+    // Fittings on the top wall, kept a fixed distance in from its corners
+    const wallProps = [
+      ["door", 2, bounds.maxX - 10, bounds.maxY + 1], // embedded in the wall
+      ["chart", 1.5, (bounds.minX + bounds.maxX) / 2, bounds.maxY], // hanging on the bricks
+      ["extinguisher", 0.5, bounds.maxX - 8.2, bounds.maxY], // standing at the wall base
+    ];
+    for (const [name, width, x, y] of wallProps) {
+      const prop = createPropMesh(name, width);
+      prop.position.set(x, y, -0.3);
+      roomGroup.add(prop);
     }
   }
-  for (let y = ROOM.minY; y <= ROOM.maxY; y += BRICK) {
-    for (const x of [ROOM.minX, ROOM.maxX]) {
-      const brick = createPropMesh("brick", BRICK);
-      brick.position.set(x, y, -0.4);
-      scene.add(brick);
-    }
-  }
 
-  // Wall-mounted decorations on the top wall
-  const wallProps = [
-    ["door", 2, 12, ROOM.maxY + 1], // embedded in the wall
-    ["chart", 1.5, 0, ROOM.maxY], // hanging on the bricks
-    ["extinguisher", 0.5, 13.8, ROOM.maxY], // standing at the wall base
-  ];
-  for (const [name, width, x, y] of wallProps) {
-    const prop = createPropMesh(name, width);
-    prop.position.set(x, y, -0.3);
-    scene.add(prop);
-  }
+  const floorMaterial = new THREE.MeshBasicMaterial({ map: floorTexture });
+  buildRoom(room);
 
   const players = new Map(); // id -> { group, update, dispose, prevX, prevY }
   const desks = new Map(); // id -> { dispose }
@@ -114,6 +135,7 @@ export function createWorld(container) {
     myPos: { x: 0, y: 0 },
     moveTarget: null, // { x, y } the waypoint currently being walked toward
     path: null, // remaining waypoints of the active route, moveTarget first
+    phasing: false, // walking through obstacles after being stuck too long
 
     // Session id of the closest player within interaction range, or null.
     // `onNearbyChange` is set by React so the UI can follow it.
@@ -210,13 +232,59 @@ export function createWorld(container) {
     cancelPath() {
       world.path = null;
       world.moveTarget = null;
+      world.setPhasing(false);
       pathDots.clear();
+    },
+
+    // Walking through furniture, shown by fading the character
+    setPhasing(on) {
+      if (world.phasing === on) return;
+      world.phasing = on;
+      const me = players.get(world.myId);
+      if (!me) return;
+      me.sprite.material.transparent = true;
+      me.sprite.material.opacity = on ? 0.45 : 1;
+    },
+
+    // True where a player can't stand: inside a desk or beyond the walls
+    isStranded(x, y) {
+      const inset = 1.5; // half a desk plus the player's own half-width
+      if (
+        x < room.minX + inset ||
+        x > room.maxX - inset ||
+        y < room.minY + inset ||
+        y > room.maxY - inset
+      ) {
+        return true;
+      }
+      for (const desk of desks.values()) {
+        const pos = desk.group.position;
+        if (
+          Math.abs(pos.x - x) < DESK_WIDTH / 2 + 0.5 &&
+          Math.abs(pos.y - y) < DESK_HEIGHT / 2 + 0.5
+        ) {
+          return true;
+        }
+      }
+      return false;
     },
 
     addDesk(id, x, y) {
       const desk = createDesk(id, x, y);
       scene.add(desk.group);
       desks.set(id, desk);
+    },
+
+    // The office grew: rebuild the floor, walls and their collision boxes
+    setRoom(bounds) {
+      if (!bounds) return;
+      room = bounds;
+      wallColliders = wallCollidersFor(bounds);
+      buildRoom(bounds);
+    },
+
+    get room() {
+      return room;
     },
 
     // Live floor-plan edits from the layout editor
@@ -289,7 +357,7 @@ export function createWorld(container) {
           return true;
         }
       }
-      for (const [cx, cy, hw, hh] of WALL_COLLIDERS) {
+      for (const [cx, cy, hw, hh] of wallColliders) {
         if (Math.abs(cx - x) < hw + 0.5 && Math.abs(cy - y) < hh + 0.5) {
           return true;
         }
@@ -338,6 +406,9 @@ export function createWorld(container) {
       indicator.dispose();
       scene.remove(pathDots.group);
       pathDots.dispose();
+      scene.remove(roomGroup);
+      roomGroup.traverse((obj) => obj.geometry?.dispose());
+      floorMaterial.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },
