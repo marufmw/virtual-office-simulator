@@ -4,6 +4,8 @@ import { createAnimatedPlayer } from "./createAnimatedPlayer";
 import { createInteractIndicator } from "./createInteractIndicator";
 import { createNameLabel } from "./createNameLabel";
 import { createDesk, DESK_WIDTH, DESK_HEIGHT } from "./createDesk";
+import { createPathDots } from "./createPathDots";
+import { findPath } from "./findPath";
 import { createPropMesh } from "./props";
 
 function makeTiledTexture(path) {
@@ -99,6 +101,9 @@ export function createWorld(container) {
   const indicator = createInteractIndicator();
   scene.add(indicator.sprite);
 
+  const pathDots = createPathDots();
+  scene.add(pathDots.group);
+
   const world = {
     scene,
     camera,
@@ -107,7 +112,8 @@ export function createWorld(container) {
     myId: null,
     myDeskId: null,
     myPos: { x: 0, y: 0 },
-    moveTarget: null, // { x, y } auto-walk destination, set by the context menu
+    moveTarget: null, // { x, y } the waypoint currently being walked toward
+    path: null, // remaining waypoints of the active route, moveTarget first
 
     // Session id of the closest player within interaction range, or null.
     // `onNearbyChange` is set by React so the UI can follow it.
@@ -161,6 +167,50 @@ export function createWorld(container) {
       if (!desk) return null;
       const { x, y } = desk.group.position;
       return { x, y: y - 1.6 };
+    },
+
+    /**
+     * Plots the shortest walkable route from where I stand to `goal`,
+     * draws it on the floor and starts following it. Falls back to a
+     * straight line if no route can be found (the game loop's
+     * obstacle-sliding then does its best).
+     */
+    walkTo(goal) {
+      if (!goal) return false;
+      const blocked = (x, y) => world.collidesAt(x, y, world.myId);
+      const route = findPath(world.myPos, goal, blocked);
+      // findPath includes my current position as the first point
+      const waypoints = route ? route.slice(1) : [{ x: goal.x, y: goal.y }];
+
+      world.path = waypoints;
+      world.moveTarget = waypoints[0];
+      pathDots.setPath([{ x: world.myPos.x, y: world.myPos.y }, ...waypoints]);
+      return route !== null;
+    },
+
+    // Redraws the trail from where I am now, so walked-over dots vanish
+    refreshPathTrail() {
+      if (!world.path) return;
+      pathDots.setPath([{ x: world.myPos.x, y: world.myPos.y }, ...world.path]);
+    },
+
+    // Marks the current waypoint reached; returns true if more remain
+    advanceWaypoint() {
+      const remaining = world.path ? world.path.slice(1) : [];
+      if (remaining.length === 0) {
+        world.cancelPath();
+        return false;
+      }
+      world.path = remaining;
+      world.moveTarget = remaining[0];
+      pathDots.setPath([{ x: world.myPos.x, y: world.myPos.y }, ...remaining]);
+      return true;
+    },
+
+    cancelPath() {
+      world.path = null;
+      world.moveTarget = null;
+      pathDots.clear();
     },
 
     addDesk(id, x, y) {
@@ -273,6 +323,8 @@ export function createWorld(container) {
       desks.clear();
       scene.remove(indicator.sprite);
       indicator.dispose();
+      scene.remove(pathDots.group);
+      pathDots.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },

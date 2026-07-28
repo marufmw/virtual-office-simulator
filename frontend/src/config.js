@@ -9,4 +9,7 @@ export const SEND_INTERVAL = 0.05; // seconds between position broadcasts (~20 H
 export const CAMERA_LERP = 8; // camera follow smoothing factor
 export const INTERACT_DISTANCE = 2.5; // how close two characters must be to chat
 export const ARRIVE_DISTANCE = 0.1; // how close an auto-walk counts as arrived
+export const WAYPOINT_DISTANCE = 0.25; // how close counts as reaching a mid-path waypoint
 export const STUCK_TIMEOUT = 2; // seconds of no progress before an auto-walk gives up
+export const PATH_CELL = 0.5; // pathfinding grid resolution, in world units
+export const PATH_DOT_SPACING = 0.45; // gap between the dots drawn along a path

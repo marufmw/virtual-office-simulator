@@ -57,7 +57,7 @@ function Office({ world, joinInfo, onProfileChange }) {
       />
       <ContextMenu
         onGoToDesk={() => {
-          world.moveTarget = world.deskStandPosition(world.myDeskId);
+          world.walkTo(world.deskStandPosition(world.myDeskId));
         }}
       />
       {nearbyId !== null && chatPeerId === null && (

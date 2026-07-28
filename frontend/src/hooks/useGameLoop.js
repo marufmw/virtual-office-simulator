@@ -1,6 +1,13 @@
 import { useEffect } from "react";
 import * as THREE from "three";
-import { SPEED, SEND_INTERVAL, CAMERA_LERP, ARRIVE_DISTANCE, STUCK_TIMEOUT } from "../config";
+import {
+  SPEED,
+  SEND_INTERVAL,
+  CAMERA_LERP,
+  ARRIVE_DISTANCE,
+  WAYPOINT_DISTANCE,
+  STUCK_TIMEOUT,
+} from "../config";
 
 /**
  * Runs the game loop: WASD movement, position broadcasting,
@@ -24,18 +31,24 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
       if (keys.has("d")) dx += 1;
 
       // Manual input cancels any auto-walk
-      if (dx !== 0 || dy !== 0) world.moveTarget = null;
+      if (dx !== 0 || dy !== 0) world.cancelPath();
 
-      // Auto-walk toward the move target (e.g. "Go to desk")
+      // Follow the plotted route waypoint by waypoint (e.g. "Go to desk")
       if ((dx === 0 && dy === 0) && world.moveTarget && world.myId !== null) {
         const tx = world.moveTarget.x - world.myPos.x;
         const ty = world.moveTarget.y - world.myPos.y;
         const dist = Math.hypot(tx, ty);
+        const isLastLeg = !world.path || world.path.length <= 1;
+        const reached = dist < (isLastLeg ? ARRIVE_DISTANCE : WAYPOINT_DISTANCE);
         // Give up if we've spent too long without getting closer — e.g.
         // someone else is standing on the spot in front of the desk
-        if (dist < ARRIVE_DISTANCE || stuckTimer > STUCK_TIMEOUT) {
-          world.moveTarget = null;
+        if (stuckTimer > STUCK_TIMEOUT) {
+          world.cancelPath();
           stuckTimer = 0;
+        } else if (reached) {
+          world.advanceWaypoint();
+          stuckTimer = 0;
+          lastDistance = Infinity;
         } else {
           stuckTimer = dist < lastDistance - 0.001 ? 0 : stuckTimer + delta;
           lastDistance = dist;
@@ -82,6 +95,7 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
           world.myPos.x = nextX;
           world.myPos.y = nextY;
           world.movePlayer(world.myId, world.myPos.x, world.myPos.y);
+          world.refreshPathTrail();
           positionDirty = true;
         }
       }
