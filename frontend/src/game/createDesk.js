@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { createNameLabel } from "./createNameLabel";
 import { createPropMesh } from "./props";
+import { DESK_UNITS } from "./deskSize";
 
-export const DESK_WIDTH = 2;
-export const DESK_HEIGHT = (30 / 32) * DESK_WIDTH; // keep the sprite's aspect ratio
+export const DESK_WIDTH = DESK_UNITS.width;
+export const DESK_HEIGHT = DESK_UNITS.height;
 
 /**
  * Creates a desk with office clutter on top: a "monitor" (the

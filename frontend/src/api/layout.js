@@ -19,7 +19,8 @@ async function request(path, options) {
   }
 }
 
-export const fetchDesks = () => request("/api/desks", { method: "GET" });
+// The whole floor plan: the room's walls plus every desk in it
+export const fetchOffice = () => request("/api/office", { method: "GET" });
 
 export const createDesk = (id, x, y) =>
   request("/api/desks", { method: "POST", body: JSON.stringify({ id, x, y }) });
