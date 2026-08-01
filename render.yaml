@@ -4,6 +4,9 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    # Must match the database's region, or the internal connection string
+    # won't resolve
+    region: oregon
     healthCheckPath: /healthz
     envVars:
       # The database already exists, so it isn't declared here. Paste its
