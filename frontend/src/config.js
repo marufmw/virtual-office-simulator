@@ -1,8 +1,18 @@
 // Backend host follows whatever host the page was loaded from, so the app
 // works both locally and when a colleague opens it over the LAN.
-const BACKEND_HOST = `${window.location.hostname}:3001`;
-export const WS_URL = `ws://${BACKEND_HOST}`;
-export const API_URL = `http://${BACKEND_HOST}`;
+//
+// In dev the backend is a separate process on :3001. In a production build
+// the backend also serves these files, so it is simply wherever the page
+// came from — which keeps the WebSocket on wss:// behind TLS. VITE_API_URL
+// overrides both if the two are ever deployed apart.
+const origin = import.meta.env.VITE_API_URL
+  ? new URL(import.meta.env.VITE_API_URL)
+  : new URL(
+      import.meta.env.DEV ? `${window.location.protocol}//${window.location.hostname}:3001` : window.location.origin
+    );
+
+export const API_URL = origin.origin;
+export const WS_URL = `${origin.protocol === "https:" ? "wss:" : "ws:"}//${origin.host}`;
 export const SPEED = 5; // units per second
 export const VIEW_SIZE = 8; // half-height of the orthographic camera view
 export const SEND_INTERVAL = 0.05; // seconds between position broadcasts (~20 Hz)

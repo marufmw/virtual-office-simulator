@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+**/dist
+backend/data
+backend/public
+.git
+.env
+docs
+**/*.test.js
+.DS_Store

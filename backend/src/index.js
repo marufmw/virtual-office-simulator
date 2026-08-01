@@ -2,6 +2,7 @@ const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
 const { createHuddleStore } = require("./huddles");
+const { serveStatic } = require("./static");
 const {
   validateNewDesk,
   validateMove,
@@ -52,9 +53,9 @@ function readJson(req) {
  * Stores a room the layout rules asked for and tells everyone the walls
  * moved. A no-op when the desk already fitted, which is the common case.
  */
-function applyRoom(room) {
-  if (sameRoom(room, db.getRoom())) return room;
-  db.saveRoom(room);
+async function applyRoom(room) {
+  if (sameRoom(room, await db.getRoom())) return room;
+  await db.saveRoom(room);
   broadcast({ type: "room_resized", room });
   return room;
 }
@@ -78,22 +79,22 @@ async function handleRequest(req, res) {
 
   // The whole floor plan: the room's walls plus every desk in it
   if (path === "/api/office" && req.method === "GET") {
-    send(res, 200, { room: db.getRoom(), desks: db.loadDesksWithStatus() });
+    send(res, 200, { room: await db.getRoom(), desks: await db.loadDesksWithStatus() });
     return;
   }
 
   if (path === "/api/desks" && req.method === "GET") {
-    send(res, 200, db.loadDesksWithStatus());
+    send(res, 200, await db.loadDesksWithStatus());
     return;
   }
 
   if (path === "/api/desks" && req.method === "POST") {
     const body = (await readJson(req)) ?? {};
-    const check = validateNewDesk(body, db.loadDesks(), db.getRoom());
+    const check = validateNewDesk(body, await db.loadDesks(), await db.getRoom());
     if (!check.ok) return send(res, 400, { error: check.error });
 
-    const room = applyRoom(check.value.room);
-    const desk = db.addDesk(check.value.id, check.value.x, check.value.y);
+    const room = await applyRoom(check.value.room);
+    const desk = await db.addDesk(check.value.id, check.value.x, check.value.y);
     broadcast({ type: "desk_added", desk });
     return send(res, 201, { ...desk, room });
   }
@@ -102,10 +103,10 @@ async function handleRequest(req, res) {
   // also shrink the office
   if (path === "/api/room" && req.method === "PATCH") {
     const body = (await readJson(req)) ?? {};
-    const check = validateRoom(body, db.loadDesks());
+    const check = validateRoom(body, await db.loadDesks());
     if (!check.ok) return send(res, 400, { error: check.error });
 
-    const room = applyRoom(check.value);
+    const room = await applyRoom(check.value);
     return send(res, 200, { room });
   }
 
@@ -113,12 +114,12 @@ async function handleRequest(req, res) {
   if (deskMatch && req.method === "PATCH") {
     const id = decodeURIComponent(deskMatch[1]);
     const body = (await readJson(req)) ?? {};
-    const check = validateMove({ id, x: body.x, y: body.y }, db.loadDesks(), db.getRoom());
+    const check = validateMove({ id, x: body.x, y: body.y }, await db.loadDesks(), await db.getRoom());
     if (!check.ok) return send(res, 400, { error: check.error });
 
     const { x, y } = check.value;
-    const room = applyRoom(check.value.room);
-    db.moveDesk(id, x, y);
+    const room = await applyRoom(check.value.room);
+    await db.moveDesk(id, x, y);
     // The occupant rides along, so a connected one has to be told where
     // they now stand
     const seated = onlinePlayerAtDesk(id);
@@ -134,17 +135,20 @@ async function handleRequest(req, res) {
 
   if (deskMatch && req.method === "DELETE") {
     const id = decodeURIComponent(deskMatch[1]);
-    if (!db.getDesk(id)) return send(res, 404, { error: "That desk is gone" });
-    if (db.getPlayer(id)) return send(res, 409, { error: "Move whoever sits there first" });
+    if (!(await db.getDesk(id))) return send(res, 404, { error: "That desk is gone" });
+    if (await db.getPlayer(id)) return send(res, 409, { error: "Move whoever sits there first" });
 
-    db.removeDesk(id);
+    await db.removeDesk(id);
     broadcast({ type: "desk_removed", id });
     return send(res, 200, { id });
   }
 
   if (path === "/api/reseat" && req.method === "POST") {
     const body = (await readJson(req)) ?? {};
-    const check = validateReseat(body, db.loadDesks(), (deskId) => Boolean(db.getPlayer(deskId)));
+    // Occupancy is read once up front so the validator stays synchronous
+    const seating = await db.loadDesksWithStatus();
+    const occupied = new Set(seating.filter((d) => d.occupant).map((d) => d.id));
+    const check = validateReseat(body, seating, (deskId) => occupied.has(deskId));
     if (!check.ok) return send(res, 400, { error: check.error });
 
     const { fromDeskId, toDeskId, swap } = check.value;
@@ -162,24 +166,31 @@ async function handleRequest(req, res) {
     };
 
     if (swap) {
-      const seats = db.swapSeats(fromDeskId, toDeskId);
+      const seats = await db.swapSeats(fromDeskId, toDeskId);
       if (!seats) return send(res, 409, { error: "Those seats just changed" });
       applyTo(mover, seats[toDeskId]);
       applyTo(displaced, seats[fromDeskId]);
     } else {
-      applyTo(mover, db.reseatPlayer(fromDeskId, toDeskId));
+      applyTo(mover, await db.reseatPlayer(fromDeskId, toDeskId));
     }
 
     return send(res, 200, { fromDeskId, toDeskId, swapped: swap });
   }
 
   if (path === "/api/layout/reset" && req.method === "POST") {
-    db.resetLayout();
+    await db.resetLayout();
     // Everyone's seat just changed underneath them; simplest honest thing
     // is to have the clients reload into the fresh office
     broadcast({ type: "layout_reset" });
-    return send(res, 200, { room: db.getRoom(), desks: db.loadDesksWithStatus() });
+    return send(res, 200, { room: await db.getRoom(), desks: await db.loadDesksWithStatus() });
   }
+
+  // Something for a host's health check to knock on
+  if (path === "/healthz") return send(res, 200, { ok: true, online: players.size });
+
+  // Anything that isn't the API is the app itself, when it's been built
+  // alongside us
+  if (!path.startsWith("/api/") && serveStatic(req, res, path)) return;
 
   send(res, 404, { error: "Not found" });
 }
@@ -221,9 +232,9 @@ function collides(x, y, exceptId = null) {
  * another person, not inside a desk, not in a wall. Searched outward in
  * rings so the person is nudged as little as possible.
  */
-function freeSpotNear(x, y, exceptId) {
-  const desks = db.loadDesks();
-  const room = db.getRoom();
+async function freeSpotNear(x, y, exceptId) {
+  const desks = await db.loadDesks();
+  const room = await db.getRoom();
   const inset = 1.5; // half a desk plus the player's own half-width
 
   const blocked = (px, py) =>
@@ -250,17 +261,17 @@ function freeSpotNear(x, y, exceptId) {
  * parked on your desk gets stepped aside rather than blocking you out of
  * your own seat forever.
  */
-function displaceOthers(id, x, y) {
+async function displaceOthers(id, x, y) {
   for (const [pid, other] of players) {
     if (pid === id) continue;
     if (Math.abs(other.x - x) >= PLAYER_SIZE || Math.abs(other.y - y) >= PLAYER_SIZE) continue;
 
-    const spot = freeSpotNear(other.x, other.y, pid);
+    const spot = await freeSpotNear(other.x, other.y, pid);
     if (!spot) continue;
 
     other.x = spot.x;
     other.y = spot.y;
-    db.savePosition(other.deskId, spot.x, spot.y);
+    await db.savePosition(other.deskId, spot.x, spot.y);
     worldMoved = true;
     // The person being moved needs the authoritative form, or their own
     // client will walk straight back from where it thinks it is
@@ -300,14 +311,15 @@ const publicPlayer = (pid, p) => ({
   character: p.character,
 });
 
-// World state is kept in the players table; log what we loaded at startup
-const savedPlayers = db.loadPlayers();
-console.log(`Loaded ${savedPlayers.length} player(s) from the database`);
-
-// Periodically persist the world state
-setInterval(() => {
-  for (const p of players.values()) {
-    db.savePosition(p.deskId, p.x, p.y);
+// Periodically persist the world state. A failed write is worth a line in
+// the log but must not take the office down.
+setInterval(async () => {
+  try {
+    for (const p of players.values()) {
+      await db.savePosition(p.deskId, p.x, p.y);
+    }
+  } catch (error) {
+    console.error("Could not save positions:", error);
   }
 }, SAVE_INTERVAL_MS);
 
@@ -342,8 +354,15 @@ setInterval(() => {
 wss.on("connection", (ws) => {
   const id = nextId++;
   let player = null;
+  let joining = false;
 
+  // The store is over the network now, so handling a message is async. A
+  // rejection here would otherwise be unhandled and take the process down.
   ws.on("message", (data) => {
+    handleMessage(data).catch((error) => console.error("Dropped a message:", error));
+  });
+
+  async function handleMessage(data) {
     let msg;
     try {
       msg = JSON.parse(data);
@@ -354,26 +373,47 @@ wss.on("connection", (ws) => {
     if (!player) {
       // First message must be the join handshake
       if (msg.type !== "hello" || typeof msg.deskId !== "string" || !msg.deskId) return;
+      // The handshake now waits on the database, so a second hello arriving
+      // in the meantime must not start a second join
+      if (joining) return;
+      joining = true;
 
-      const desk = db.getDesk(msg.deskId);
+      const desk = await db.getDesk(msg.deskId);
       if (!desk) {
         // desk IDs come from the seeded set only
+        joining = false;
         ws.send(JSON.stringify({ type: "error", reason: "invalid_desk" }));
         return;
       }
 
-      const existing = db.getPlayer(msg.deskId);
+      const existing = await db.getPlayer(msg.deskId);
       let record;
       if (existing) {
         record = existing;
       } else {
-        if (typeof msg.name !== "string" || !msg.name) return; // new desks need a name
+        if (typeof msg.name !== "string" || !msg.name) {
+          joining = false;
+          return; // new desks need a name
+        }
         const character = CHARACTERS.includes(msg.character)
           ? msg.character
           : CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
         // New players start beside their designated desk
-        record = db.createPlayer(msg.deskId, msg.name, character, desk.x, desk.y + SPAWN_OFFSET_Y);
+        record = await db.createPlayer(
+          msg.deskId,
+          msg.name,
+          character,
+          desk.x,
+          desk.y + SPAWN_OFFSET_Y
+        );
       }
+
+      // Read the floor plan before joining the room. A socket in `players`
+      // receives broadcasts, and while this waits on the database somebody
+      // else may well move — init has to be the first thing this client
+      // sees, or it is told about a move it has no world to apply it to.
+      // Two independent reads, fetched together to cost one round trip.
+      const [room, desks] = await Promise.all([db.getRoom(), db.loadDesks()]);
 
       player = {
         ws,
@@ -391,8 +431,8 @@ wss.on("connection", (ws) => {
         JSON.stringify({
           type: "init",
           id,
-          room: db.getRoom(),
-          desks: db.loadDesks(),
+          room,
+          desks,
           players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
         })
       );
@@ -405,16 +445,16 @@ wss.on("connection", (ws) => {
       const oldDeskId = player.deskId;
       // Only seeded, unclaimed desks can be taken
       const requested = typeof msg.deskId === "string" && msg.deskId ? msg.deskId : oldDeskId;
-      const deskId =
-        requested !== oldDeskId && (!db.getDesk(requested) || db.getPlayer(requested))
-          ? oldDeskId
-          : requested;
+      const takeable =
+        requested === oldDeskId ||
+        ((await db.getDesk(requested)) && !(await db.getPlayer(requested)));
+      const deskId = takeable ? requested : oldDeskId;
 
       player.name = typeof msg.name === "string" && msg.name ? msg.name : player.name;
       player.character = CHARACTERS.includes(msg.character) ? msg.character : player.character;
       player.deskId = deskId;
 
-      db.updateProfile(oldDeskId, { deskId, name: player.name, character: player.character });
+      await db.updateProfile(oldDeskId, { deskId, name: player.name, character: player.character });
       broadcast({ type: "update", player: publicPlayer(id, player) });
       return;
     }
@@ -426,7 +466,7 @@ wss.on("connection", (ws) => {
       if (!target || !body || msg.to === id) return;
 
       const createdAt = Date.now();
-      db.saveMessage(player.deskId, target.deskId, body, createdAt);
+      await db.saveMessage(player.deskId, target.deskId, body, createdAt);
 
       // Echo to the sender too, so both sides render the same record
       const envelope = JSON.stringify({
@@ -465,13 +505,8 @@ wss.on("connection", (ws) => {
     if (msg.type === "dm_history") {
       const target = players.get(msg.with);
       if (!target) return;
-      ws.send(
-        JSON.stringify({
-          type: "dm_history",
-          with: msg.with,
-          messages: db.loadConversation(player.deskId, target.deskId),
-        })
-      );
+      const messages = await db.loadConversation(player.deskId, target.deskId);
+      ws.send(JSON.stringify({ type: "dm_history", with: msg.with, messages }));
       return;
     }
 
@@ -486,22 +521,37 @@ wss.on("connection", (ws) => {
       player.x = msg.x;
       player.y = msg.y;
       worldMoved = true;
-      // Forcing through means anyone in the way gets stepped aside
-      if (msg.phasing) displaceOthers(id, player.x, player.y);
+      // The move itself goes out first — stepping people aside reads the
+      // floor plan, and nobody's walk should wait on that
       broadcast({ type: "move", id, x: player.x, y: player.y }, id);
+      // Forcing through means anyone in the way gets stepped aside
+      if (msg.phasing) await displaceOthers(id, player.x, player.y);
     }
-  });
+  }
 
   ws.on("close", () => {
     if (!player) return;
     players.delete(id);
     worldMoved = true;
-    db.savePosition(player.deskId, player.x, player.y);
+    db.savePosition(player.deskId, player.x, player.y).catch((error) =>
+      console.error(`Could not save ${player.name}'s last position:`, error)
+    );
     broadcast({ type: "leave", id });
     console.log(`Player ${player.name} (${player.deskId}) left (${players.size} online)`);
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT} (WebSocket on the same port)`);
-});
+// The tables have to exist before the first person knocks, so nothing is
+// served until the database is ready
+db.init()
+  .then(async () => {
+    const savedPlayers = await db.loadPlayers();
+    console.log(`Loaded ${savedPlayers.length} player(s) from the database`);
+    server.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT} (WebSocket on the same port)`);
+    });
+  })
+  .catch((error) => {
+    console.error("Could not reach the database:", error);
+    process.exit(1);
+  });

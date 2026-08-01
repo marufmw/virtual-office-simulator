@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: virtual-office
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      # The database already exists, so it isn't declared here. Paste its
+      # *internal* connection string into the Render dashboard once —
+      # `sync: false` means the blueprint never overwrites it, and the
+      # internal URL keeps the traffic inside Render's private network.
+      - key: DATABASE_URL
+        sync: false
