@@ -13,6 +13,7 @@ const Excalidraw = lazy(async () => {
 });
 
 const BROADCAST_MS = 90; // how often local edits go out
+const FULL_SYNC_MS = 5000; // and how often the whole board is sent regardless
 const POINTER_MS = 60; // and how often the pen's position does
 
 // Cursor colours, so two people at the board are told apart at a glance
@@ -42,6 +43,7 @@ export function Whiteboard({ initialElements, members, handlersRef, onBroadcast,
   const sentRef = useRef(new Map()); // element id -> the version we last sent
   const collaboratorsRef = useRef(new Map());
   const broadcastTimer = useRef(0);
+  const trailingTimer = useRef(null);
   const pointerTimer = useRef(0);
 
   // What was already on the board is not ours to announce
@@ -61,7 +63,7 @@ export function Whiteboard({ initialElements, members, handlersRef, onBroadcast,
   const applyRemote = useCallback(
     (incoming) => {
       if (!api || !incoming?.length) return;
-      const scene = new Map(api.getSceneElements().map((e) => [e.id, e]));
+      const scene = new Map(api.getSceneElementsIncludingDeleted().map((e) => [e.id, e]));
       let changed = false;
       for (const element of incoming) {
         if (!element?.id || !newer(element, scene.get(element.id))) continue;
@@ -112,29 +114,69 @@ export function Whiteboard({ initialElements, members, handlersRef, onBroadcast,
   }, [api, members]);
 
   /**
-   * Excalidraw calls this on every change, including ones we caused by
-   * applying somebody else's. Only elements whose version has moved past
-   * what we last sent go out, which keeps the two clients from bouncing the
-   * same stroke back and forth forever.
+   * Sends what this client knows. `full` ignores what we think the other
+   * side already has and sends everything — the periodic repair below.
+   *
+   * The element list comes from `getSceneElementsIncludingDeleted`, not
+   * from the argument Excalidraw hands us: a deletion is a tombstone with a
+   * bumped version, and it has to travel like any other edit or the other
+   * clients keep drawing something that is no longer there.
    */
-  const handleChange = useCallback(
-    (elements) => {
-      // The throttle comes first: Excalidraw calls this on every pointer
-      // move, and everything below is work per element on the board
-      const now = performance.now();
-      if (now - broadcastTimer.current < BROADCAST_MS) return;
-      broadcastTimer.current = now;
-
+  const flush = useCallback(
+    (full = false) => {
+      if (!api) return;
       const changed = [];
-      for (const element of elements) {
-        if ((element.version ?? 0) <= (sentRef.current.get(element.id) ?? -1)) continue;
+      for (const element of api.getSceneElementsIncludingDeleted()) {
+        if (!full && (element.version ?? 0) <= (sentRef.current.get(element.id) ?? -1)) continue;
         sentRef.current.set(element.id, element.version ?? 0);
         changed.push(element);
       }
       if (changed.length > 0) onBroadcast(changed);
     },
-    [onBroadcast]
+    [api, onBroadcast]
   );
+
+  /**
+   * Excalidraw calls this on every change, which is far more often than
+   * anything needs to go over a socket — so it is throttled.
+   *
+   * The throttle has a trailing edge, and that matters more than the
+   * leading one: dropping the calls that arrive during the cooldown loses
+   * whatever the last of them said, and the last one is the finished edit.
+   * Cutting a sentence and having the other side keep all but one letter is
+   * exactly what a leading-only throttle looks like.
+   */
+  const handleChange = useCallback(() => {
+    const now = performance.now();
+    const since = now - broadcastTimer.current;
+
+    if (since >= BROADCAST_MS) {
+      broadcastTimer.current = now;
+      flush();
+      return;
+    }
+    if (trailingTimer.current) return; // one is already queued
+    trailingTimer.current = setTimeout(() => {
+      trailingTimer.current = null;
+      broadcastTimer.current = performance.now();
+      flush();
+    }, BROADCAST_MS - since);
+  }, [flush]);
+
+  /**
+   * Belt and braces: the whole board, on a timer. Nothing should need this
+   * — but a dropped message or a merge that went the wrong way would
+   * otherwise leave two people looking at different drawings forever, and
+   * the server keeps only what is newer, so a repeat of what it already has
+   * costs nothing and is never rebroadcast.
+   */
+  useEffect(() => {
+    const timer = setInterval(() => flush(true), FULL_SYNC_MS);
+    return () => clearInterval(timer);
+  }, [flush]);
+
+  // A queued send must not outlive the board being closed
+  useEffect(() => () => clearTimeout(trailingTimer.current), []);
 
   const handlePointer = useCallback(
     (payload) => {
