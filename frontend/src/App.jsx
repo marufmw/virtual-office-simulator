@@ -13,6 +13,8 @@ import { ChatPanel } from "./components/ChatPanel";
 import { TouchControls } from "./components/TouchControls";
 import { TopControls } from "./components/TopControls";
 import { OfficeMap } from "./components/OfficeMap";
+import { Whiteboard } from "./components/Whiteboard";
+import { BoardPrompt } from "./components/BoardPrompt";
 import { SeatClaim, SeatContested } from "./components/SeatClaim";
 import { ProfileForm } from "./components/ProfileForm";
 
@@ -33,6 +35,9 @@ function Office({ world, joinInfo, onProfileChange }) {
   const [seat, setSeat] = useState(null);
   const [pickingDesk, setPickingDesk] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  // Standing at the whiteboard: { near, members, elements }
+  const [board, setBoard] = useState(null);
+  const [boardOpen, setBoardOpen] = useState(false);
 
   const appendMessage = useCallback((peerId, message) => {
     setConversations((prev) => ({ ...prev, [peerId]: [...(prev[peerId] ?? []), message] }));
@@ -63,6 +68,26 @@ function Office({ world, joinInfo, onProfileChange }) {
     if (!message.mine) setHuddleOpen(true);
   }, []);
 
+  // The open whiteboard registers its own handlers here; `onBoard` is ours
+  const boardHandlersRef = useRef(null);
+  const boardRef = useRef(null);
+  boardRef.current = {
+    onBoard: (msg) => {
+      // Only the message that greets you at the board carries the scene;
+      // the ones that follow are membership changes and say nothing about
+      // what's drawn. Keeping what we already hold is the difference
+      // between walking up to the board and finding it blank.
+      setBoard((current) =>
+        msg.near
+          ? { members: msg.members, elements: msg.elements ?? current?.elements ?? [] }
+          : null
+      );
+      if (!msg.near) setBoardOpen(false);
+    },
+    applyRemote: (elements) => boardHandlersRef.current?.applyRemote?.(elements),
+    applyPointer: (payload) => boardHandlersRef.current?.applyPointer?.(payload),
+  };
+
   const chatRef = useRef(null);
   chatRef.current = {
     onMessage: appendMessage,
@@ -79,9 +104,16 @@ function Office({ world, joinInfo, onProfileChange }) {
     sendHuddleRef,
     requestHistoryRef,
     claimSeatRef,
-  } = useOfficeSocket(world, joinInfoRef, chatRef, setSeat);
+    sendBoardRef,
+    sendPointerRef,
+  } = useOfficeSocket(world, joinInfoRef, chatRef, setSeat, boardRef);
   useGameLoop(world, keysRef, sendMoveRef, stickRef);
-  useTapToWalk(world);
+  const atBoardRef = useRef(false);
+  useTapToWalk(world, () => {
+    if (!atBoardRef.current) return false; // too far: walk over instead
+    setBoardOpen(true);
+    return true;
+  });
 
   // Interacting opens the huddle when I'm standing in a group, since that's
   // the conversation everyone around me is already having
@@ -101,6 +133,17 @@ function Office({ world, joinInfo, onProfileChange }) {
     world.walkTo(world.deskStandPosition(world.myDeskId));
   }, [world]);
 
+  // The map and the whiteboard cover the office completely. Rendering it
+  // underneath them costs a full WebGL frame every tick and buys nothing —
+  // and on the whiteboard it is exactly what makes drawing feel sticky.
+  useEffect(() => {
+    world.paused = mapOpen || boardOpen;
+    stickRef.current = { x: 0, y: 0 }; // don't resume mid-stride
+    return () => {
+      world.paused = false;
+    };
+  }, [world, mapOpen, boardOpen]);
+
   // M for map, the way most games spell it
   useEffect(() => {
     const onKey = (e) => {
@@ -113,6 +156,10 @@ function Office({ world, joinInfo, onProfileChange }) {
   }, []);
 
   const chatIsOpen = huddleOpen || chatPeerId !== null;
+  // Walking off mid-stroke closes the board, which is the honest thing:
+  // you can't draw on something you're no longer standing at
+  const atBoard = board !== null;
+  atBoardRef.current = atBoard;
 
   // Somebody else has this character. Nothing in the office is usable from
   // here, so the claim screen takes over the whole surface.
@@ -160,6 +207,21 @@ function Office({ world, joinInfo, onProfileChange }) {
           onWalkTo={(goal) => world.walkTo(goal)}
           onClose={() => setMapOpen(false)}
         />
+      )}
+      {atBoard && boardOpen && (
+        <Whiteboard
+          initialElements={board.elements}
+          members={board.members}
+          handlersRef={boardHandlersRef}
+          onBroadcast={(elements) => sendBoardRef.current(elements)}
+          onPointer={(payload) => sendPointerRef.current(payload)}
+          onClose={() => setBoardOpen(false)}
+        />
+      )}
+      {/* Standing at the board but not drawing on it yet. The prompt rides
+          on the board itself; the board is clickable too. */}
+      {atBoard && !boardOpen && !chatIsOpen && (
+        <BoardPrompt world={world} count={board.members.length} onOpen={() => setBoardOpen(true)} />
       )}
       {/* A long press would fire this at an arbitrary spot; on touch the
           same action is a button in the thumb cluster instead */}

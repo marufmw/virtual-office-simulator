@@ -2,6 +2,7 @@ const http = require("node:http");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
 const { createHuddleStore } = require("./huddles");
+const { createBoardStore } = require("./boards");
 const { serveStatic } = require("./static");
 const {
   validateNewDesk,
@@ -14,6 +15,8 @@ const {
 const PORT = process.env.PORT || 3001;
 const SAVE_INTERVAL_MS = 10_000;
 const HUDDLE_INTERVAL_MS = 200; // how often proximity groups are recomputed
+const BOARD_SAVE_INTERVAL_MS = 3000; // and how often a changed whiteboard is written down
+const BOARD_ID = "office"; // the one board there is, so far
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 const MAX_MESSAGE_LENGTH = 1000;
 
@@ -385,9 +388,29 @@ const huddlePayload = (huddle) => ({
   messages: huddle ? huddle.messages : [],
 });
 
+// --- The whiteboard ------------------------------------------------------
+
+const board = createBoardStore();
+
+// Who else is standing at the board, as the client needs to name them
+const boardMembers = () =>
+  [...board.members].map((pid) => ({ id: pid, name: players.get(pid)?.name ?? "Someone" }));
+
+// Tells everyone at the board that its membership changed, so a name can
+// appear or disappear from the "drawing here" list without a redraw
+function announceBoard() {
+  const members = boardMembers();
+  for (const pid of board.members) {
+    const member = players.get(pid);
+    if (member?.ws.readyState === 1) {
+      member.ws.send(JSON.stringify({ type: "board", near: true, members }));
+    }
+  }
+}
+
 // Recompute on a timer rather than per move: positions arrive at ~20 Hz per
 // player and only the resulting membership matters.
-setInterval(() => {
+setInterval(async () => {
   if (!worldMoved) return;
   worldMoved = false;
 
@@ -396,7 +419,37 @@ setInterval(() => {
     const member = players.get(playerId);
     if (member?.ws.readyState === 1) member.ws.send(JSON.stringify(huddlePayload(huddle)));
   }
+
+  // Walking up to the board hands you the scene as it stands; walking off
+  // just tells you that you've left it
+  const room = await db.getRoom();
+  const changes = board.sync(positions, room);
+  for (const { playerId, near } of changes) {
+    const member = players.get(playerId);
+    if (member?.ws.readyState !== 1) continue;
+    member.ws.send(
+      JSON.stringify(
+        near
+          ? { type: "board", near: true, members: boardMembers(), elements: board.snapshot() }
+          : { type: "board", near: false, members: [] }
+      )
+    );
+  }
+  // Anyone already there needs the new list too
+  if (changes.length > 0) announceBoard();
 }, HUDDLE_INTERVAL_MS);
+
+// The drawing outlives the people drawing it, so it goes to the database —
+// on a timer, because a scene changes on every stroke.
+setInterval(async () => {
+  if (!board.dirty) return;
+  try {
+    await db.saveBoard(BOARD_ID, board.snapshot(), Date.now());
+    board.markSaved();
+  } catch (error) {
+    console.error("Could not save the whiteboard:", error);
+  }
+}, BOARD_SAVE_INTERVAL_MS);
 
 wss.on("connection", (ws) => {
   const id = nextId++;
@@ -415,6 +468,7 @@ wss.on("connection", (ws) => {
       console.error(`Could not save ${player.name}'s position on handover:`, error)
     );
     players.delete(id);
+    board.remove(id);
     player = null;
     worldMoved = true;
     broadcast({ type: "leave", id });
@@ -606,6 +660,42 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    // A stroke on the whiteboard. Only what actually won the merge goes
+    // back out, so a client echoing a stale element doesn't start a loop.
+    if (msg.type === "board_update") {
+      if (!board.members.has(id) || !Array.isArray(msg.elements)) return;
+      const accepted = board.merge(msg.elements);
+      if (accepted.length === 0) return;
+
+      const envelope = JSON.stringify({ type: "board_update", elements: accepted });
+      for (const pid of board.members) {
+        if (pid === id) continue; // their own edit is already on their screen
+        const member = players.get(pid);
+        if (member?.ws.readyState === 1) member.ws.send(envelope);
+      }
+      return;
+    }
+
+    // Where someone's pen is. Not stored and not merged — a cursor is only
+    // interesting while it's moving.
+    if (msg.type === "board_pointer") {
+      if (!board.members.has(id)) return;
+      const envelope = JSON.stringify({
+        type: "board_pointer",
+        id,
+        name: player.name,
+        pointer: msg.pointer,
+        button: msg.button,
+        selectedElementIds: msg.selectedElementIds,
+      });
+      for (const pid of board.members) {
+        if (pid === id) continue;
+        const member = players.get(pid);
+        if (member?.ws.readyState === 1) member.ws.send(envelope);
+      }
+      return;
+    }
+
     // Chat history with another player, requested when a chat opens
     if (msg.type === "dm_history") {
       const target = players.get(msg.with);
@@ -648,6 +738,7 @@ wss.on("connection", (ws) => {
     if (!player) return;
     const deskId = player.deskId;
     players.delete(id);
+    board.remove(id);
     worldMoved = true;
     db.savePosition(deskId, player.x, player.y).catch((error) =>
       console.error(`Could not save ${player.name}'s last position:`, error)
@@ -665,6 +756,8 @@ db.init()
   .then(async () => {
     const savedPlayers = await db.loadPlayers();
     console.log(`Loaded ${savedPlayers.length} player(s) from the database`);
+    board.load(await db.loadBoard(BOARD_ID));
+    console.log(`Whiteboard restored with ${board.snapshot().length} element(s)`);
     server.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT} (WebSocket on the same port)`);
     });

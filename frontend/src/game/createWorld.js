@@ -53,6 +53,57 @@ function makeFloorTexture(fill = "#aba7a4", grout = "#969390", tiles = 4) {
   return texture;
 }
 
+/**
+ * The whiteboard that hangs on the back wall. Drawn rather than loaded, so
+ * it can be as wide as it needs to be without a sprite to match: a dark
+ * frame, a white surface, and enough of a scribble on it to read as a
+ * whiteboard from across the room.
+ */
+function makeWhiteboardTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 100;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#20242f"; // frame
+  ctx.fillRect(0, 0, 160, 100);
+  ctx.fillStyle = "#f2f5fb"; // the board itself
+  ctx.fillRect(5, 5, 150, 82);
+  ctx.fillStyle = "#39405a"; // the pen tray along the bottom
+  ctx.fillRect(5, 87, 150, 8);
+
+  // A scribble, so it doesn't read as a blank rectangle
+  ctx.lineCap = "round";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#38bdf8";
+  ctx.beginPath();
+  ctx.moveTo(20, 30);
+  ctx.lineTo(58, 30);
+  ctx.moveTo(20, 45);
+  ctx.lineTo(44, 45);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#f5b544";
+  ctx.beginPath();
+  ctx.arc(112, 42, 18, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#4ade80";
+  ctx.beginPath();
+  ctx.moveTo(20, 64);
+  ctx.lineTo(84, 64);
+  ctx.stroke();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// Mirrors BOARD_INSET in the backend's boards.js: where you stand to draw
+export const BOARD_INSET = 2;
+const BOARD_WIDTH = 5; // world units across
+
 const PORTRAIT_PULLBACK = 1.35; // how much wider a portrait screen sees
 const BRICK = 2; // world units per brick tile
 // Courses of brick on the top wall. The door is 4 units tall and stands on
@@ -102,10 +153,12 @@ export function createWorld(container) {
   // Floor, walls and their fittings. Rebuilt whenever the room grows, so
   // they live in one group that can be emptied wholesale.
   const floorTexture = makeFloorTexture();
+  const whiteboardTexture = makeWhiteboardTexture();
   const roomGroup = new THREE.Group();
   scene.add(roomGroup);
   let room = DEFAULT_ROOM;
   let wallColliders = wallCollidersFor(room);
+  let boardMesh = null; // the whiteboard, rebuilt with the room
 
   function buildRoom(bounds) {
     roomGroup.traverse((obj) => {
@@ -148,10 +201,21 @@ export function createWorld(container) {
       }
     }
 
+    // The whiteboard, hung in the middle of the back wall where there's
+    // floor in front of it to stand on. The server works out the same spot
+    // from the same room, so walking up to what you see is walking into the
+    // session.
+    boardMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(BOARD_WIDTH, BOARD_WIDTH * (100 / 160)),
+      new THREE.MeshBasicMaterial({ map: whiteboardTexture, transparent: true })
+    );
+    boardMesh.position.set((bounds.minX + bounds.maxX) / 2, bounds.maxY + 0.6, -0.3);
+    roomGroup.add(boardMesh);
+
     // Fittings on the top wall, kept a fixed distance in from its corners
     const wallProps = [
       ["door", 2, bounds.maxX - 10, bounds.maxY + 1], // embedded in the wall
-      ["chart", 1.5, (bounds.minX + bounds.maxX) / 2, bounds.maxY], // hanging on the bricks
+      ["chart", 1.5, bounds.minX + 8, bounds.maxY], // hanging on the bricks
       ["extinguisher", 0.5, bounds.maxX - 8.2, bounds.maxY], // standing at the wall base
     ];
     for (const [name, width, x, y] of wallProps) {
@@ -184,6 +248,7 @@ export function createWorld(container) {
     moveTarget: null, // { x, y } the waypoint currently being walked toward
     path: null, // remaining waypoints of the active route, moveTarget first
     phasing: false, // walking through obstacles after being stuck too long
+    paused: false, // true while a full-screen overlay is covering the office
 
     // Session id of the closest player within interaction range, or null.
     // `onNearbyChange` is set by React so the UI can follow it.
@@ -229,6 +294,37 @@ export function createWorld(container) {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
       return raycaster.intersectObject(indicator.sprite).length > 0;
+    },
+
+    /**
+     * The inverse of screenToWorld: where a spot in the office shows up on
+     * screen, in CSS pixels, so a label can be pinned to it.
+     */
+    worldToScreen(x, y) {
+      const ndcX = (x - camera.position.x) / ((camera.right - camera.left) / 2);
+      const ndcY = (y - camera.position.y) / ((camera.top - camera.bottom) / 2);
+      return {
+        left: ((ndcX + 1) / 2) * window.innerWidth,
+        top: ((1 - ndcY) / 2) * window.innerHeight,
+      };
+    },
+
+    // The whiteboard's own position, and the floor in front of it where
+    // you have to be standing to draw. BOARD_INSET mirrors the backend.
+    boardPosition() {
+      return { x: (room.minX + room.maxX) / 2, y: room.maxY + 0.6 };
+    },
+
+    boardStandPosition() {
+      return { x: (room.minX + room.maxX) / 2, y: room.maxY - BOARD_INSET };
+    },
+
+    // True if the given normalized device coords land on the whiteboard
+    boardHit(ndcX, ndcY) {
+      if (!boardMesh) return false;
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+      return raycaster.intersectObject(boardMesh).length > 0;
     },
 
     /**
@@ -503,6 +599,7 @@ export function createWorld(container) {
       roomGroup.traverse((obj) => obj.geometry?.dispose());
       floorMaterial.dispose();
       floorTexture.dispose();
+      whiteboardTexture.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },

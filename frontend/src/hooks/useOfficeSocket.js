@@ -10,13 +10,15 @@ import { WS_URL } from "../config";
  * reports who is driving this character. Returns refs with `sendMove`,
  * `sendProfile`, `sendDm`, `sendHuddle`, `requestHistory` and `claimSeat`.
  */
-export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
+export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
   const sendMoveRef = useRef(() => {});
   const sendProfileRef = useRef(() => {});
   const sendDmRef = useRef(() => {});
   const sendHuddleRef = useRef(() => {});
   const requestHistoryRef = useRef(() => {});
   const claimSeatRef = useRef(() => {});
+  const sendBoardRef = useRef(() => {});
+  const sendPointerRef = useRef(() => {});
   const onSeatRef = useRef(onSeat);
   onSeatRef.current = onSeat;
 
@@ -58,6 +60,18 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
     sendHuddleRef.current = (text) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "huddle_msg", text }));
+      }
+    };
+
+    sendBoardRef.current = (elements) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "board_update", elements }));
+      }
+    };
+
+    sendPointerRef.current = (payload) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "board_pointer", ...payload }));
       }
     };
 
@@ -159,6 +173,14 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
             createdAt: m.createdAt,
           }))
         );
+      } else if (msg.type === "board") {
+        // Standing at the board, or no longer standing at it. Arriving
+        // brings the scene as it currently stands along with it.
+        boardRef?.current?.onBoard?.(msg);
+      } else if (msg.type === "board_update") {
+        boardRef?.current?.applyRemote?.(msg.elements);
+      } else if (msg.type === "board_pointer") {
+        boardRef?.current?.applyPointer?.(msg);
       } else if (msg.type === "seat") {
         // Either "you are driving this character, and N others are asking"
         // or "somebody else has it". The overlay is the UI for both.
@@ -175,9 +197,11 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
       sendHuddleRef.current = () => {};
       requestHistoryRef.current = () => {};
       claimSeatRef.current = () => {};
+      sendBoardRef.current = () => {};
+      sendPointerRef.current = () => {};
       ws.close();
     };
-  }, [world, joinInfoRef, chatRef]);
+  }, [world, joinInfoRef, chatRef, boardRef]);
 
   return {
     sendMoveRef,
@@ -186,5 +210,7 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
     sendHuddleRef,
     requestHistoryRef,
     claimSeatRef,
+    sendBoardRef,
+    sendPointerRef,
   };
 }

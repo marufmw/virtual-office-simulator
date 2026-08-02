@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const TAP_SLOP = 12; // px of movement still counted as a tap, not a drag
 const TAP_TIME = 500; // ms beyond which it's a press, not a tap
@@ -12,7 +12,11 @@ const TAP_TIME = 500; // ms beyond which it's a press, not a tap
  * conversation. So is anything but the left mouse button, since the right
  * one belongs to the context menu.
  */
-export function useTapToWalk(world) {
+export function useTapToWalk(world, onBoardTap) {
+  // Read through a ref so a changing callback doesn't rebind the listeners
+  const onBoardTapRef = useRef(onBoardTap);
+  onBoardTapRef.current = onBoardTap;
+
   useEffect(() => {
     const canvas = world.renderer.domElement;
     let start = null;
@@ -35,6 +39,15 @@ export function useTapToWalk(world) {
 
       // The bubble is a tap target of its own
       if (world.indicatorHit(ndcX, ndcY)) return;
+
+      // So is the whiteboard: standing at it, tapping it opens it; from
+      // across the room, tapping it walks you over — which is what you
+      // wanted anyway
+      if (world.boardHit(ndcX, ndcY)) {
+        if (onBoardTapRef.current?.()) return;
+        world.walkTo(world.boardStandPosition());
+        return;
+      }
 
       const goal = world.screenToWorld(ndcX, ndcY);
       // Walking into a desk or a wall isn't a destination; the nearest the

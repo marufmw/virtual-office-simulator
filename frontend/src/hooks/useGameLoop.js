@@ -158,7 +158,11 @@ export function useGameLoop(world, keysRef, sendMoveRef, stickRef) {
     }
 
     function tick() {
+      // Always consume the clock, or the first frame back is a huge step
       const delta = clock.getDelta();
+      // A full-screen overlay is up: the office is hidden behind it, and
+      // rendering it anyway just takes the GPU away from whatever is on top
+      if (world.paused) return;
       rescueIfStranded(delta);
       updateMovement(delta);
       updateCamera(delta);

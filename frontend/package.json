@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "excalidraw:assets": "node scripts/copy-excalidraw-assets.mjs",
+    "predev": "node scripts/copy-excalidraw-assets.mjs",
+    "prebuild": "node scripts/copy-excalidraw-assets.mjs"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@tailwindcss/vite": "^4.3.3",
     "lucide-react": "^1.27.0",
     "react": "^19.2.7",

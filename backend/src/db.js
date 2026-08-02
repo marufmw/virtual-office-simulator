@@ -59,6 +59,14 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS messages_pair
     ON messages (from_desk, to_desk, created_at);
+
+  -- What's drawn on a whiteboard, as the Excalidraw element array. One row
+  -- per board; the office has one, but nothing here assumes that.
+  CREATE TABLE IF NOT EXISTS boards (
+    id         TEXT PRIMARY KEY,
+    scene      JSONB NOT NULL,
+    updated_at BIGINT NOT NULL
+  );
 `;
 
 // Seed the office: the real floor plan, as a grid of [column, row].
@@ -210,6 +218,20 @@ module.exports = {
       // bigint comes back as a string; timestamps are numbers on the wire
       createdAt: Number(m.created_at),
     })),
+
+  // --- The whiteboard ---
+
+  loadBoard: async (id) => {
+    const row = await one("SELECT scene FROM boards WHERE id = $1", [id]);
+    return row ? row.scene : [];
+  },
+
+  saveBoard: (id, scene, updatedAt) =>
+    query(
+      `INSERT INTO boards (id, scene, updated_at) VALUES ($1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET scene = $2, updated_at = $3`,
+      [id, JSON.stringify(scene), updatedAt]
+    ),
 
   getDesk: (id) => one("SELECT * FROM desks WHERE id = $1", [id]),
 
