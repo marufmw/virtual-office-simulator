@@ -8,6 +8,11 @@ import { createPathDots } from "./createPathDots";
 import { DEFAULT_ROOM } from "./roomBounds";
 import { findPath } from "./findPath";
 import { createPropMesh } from "./props";
+import {
+  BOARD_WIDTH,
+  BOARD_ASPECT,
+  boardStandPosition,
+} from "./boardPlacement";
 
 function makeTiledTexture(path) {
   const texture = new THREE.TextureLoader().load(path);
@@ -99,10 +104,6 @@ function makeWhiteboardTexture() {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
-
-// Mirrors BOARD_INSET in the backend's boards.js: where you stand to draw
-export const BOARD_INSET = 2;
-const BOARD_WIDTH = 5; // world units across
 
 const PORTRAIT_PULLBACK = 1.35; // how much wider a portrait screen sees
 const BRICK = 2; // world units per brick tile
@@ -206,7 +207,7 @@ export function createWorld(container) {
     // from the same room, so walking up to what you see is walking into the
     // session.
     boardMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(BOARD_WIDTH, BOARD_WIDTH * (100 / 160)),
+      new THREE.PlaneGeometry(BOARD_WIDTH, BOARD_WIDTH * BOARD_ASPECT),
       new THREE.MeshBasicMaterial({ map: whiteboardTexture, transparent: true })
     );
     boardMesh.position.set((bounds.minX + bounds.maxX) / 2, bounds.maxY + 0.6, -0.3);
@@ -316,7 +317,7 @@ export function createWorld(container) {
     },
 
     boardStandPosition() {
-      return { x: (room.minX + room.maxX) / 2, y: room.maxY - BOARD_INSET };
+      return boardStandPosition(room);
     },
 
     // True if the given normalized device coords land on the whiteboard

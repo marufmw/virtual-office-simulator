@@ -21,7 +21,7 @@ import {
   usePinchZoom,
   useWheelZoom,
 } from "./canvas/officeView";
-import { RoomFrame, TouchPad } from "./canvas/officeCanvas";
+import { RoomFrame, TouchPad, BoardPlate } from "./canvas/officeCanvas";
 
 const GUIDE_TOLERANCE = 0.4; // how close counts as aligned with another desk
 const MIN_SPAN = 12; // mirrors MIN_ROOM_SPAN in the backend's layout.js
@@ -409,6 +409,10 @@ export function LayoutEditor({
           >
             {/* The room, drawn as a frame on the canvas */}
             <RoomFrame room={shown} zoom={zoom} label={`Office · ${span.w} × ${span.h}`}>
+              {/* Hangs on the back wall and moves with it, so there is
+                  nothing to drag — but leaving it off the plan would hide
+                  why that stretch of wall should stay clear */}
+              <BoardPlate room={shown} zoom={zoom} />
               {/* Wall handles */}
               {[
                 ["top", "left-0 right-0 -top-1 h-2 cursor-ns-resize"],

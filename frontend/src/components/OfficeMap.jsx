@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Crosshair, Users, MapPin } from "lucide-react";
 import { PX, useCanvasView, usePinchZoom, useWheelZoom } from "./canvas/officeView";
-import { RoomFrame, ZoomControls } from "./canvas/officeCanvas";
+import { RoomFrame, ZoomControls, BoardPlate } from "./canvas/officeCanvas";
 import { DESK_UNITS } from "../game/deskSize";
+import { boardStandPosition } from "../game/boardPlacement";
 
 const REFRESH_MS = 120; // how often the markers re-read the world
 const GLIDE_MS = 200; // and how long they take to slide to the new spot
@@ -144,6 +145,17 @@ export function OfficeMap({ world, onWalkTo, onClose }) {
             }}
           >
             <RoomFrame room={room} zoom={zoom}>
+              {/* The whiteboard, and a way to walk over to it */}
+              <BoardPlate
+                room={room}
+                zoom={zoom}
+                hint="Walk to the whiteboard"
+                onClick={() => {
+                  const spot = boardStandPosition(room);
+                  walk(spot.x, spot.y);
+                }}
+              />
+
               {/* Desks: part of the room, so they scale with it */}
               {desks.map((desk) => {
                 const seated = others.some(

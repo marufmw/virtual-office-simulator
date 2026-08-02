@@ -1,4 +1,5 @@
 import { PX } from "./officeView";
+import { BOARD_WIDTH, boardPosition } from "../../game/boardPlacement";
 
 /**
  * The room drawn as a frame on the canvas: floor, tiles and a label that
@@ -36,6 +37,48 @@ export function RoomFrame({ room, zoom, label, children }) {
       )}
       {children}
     </div>
+  );
+}
+
+/**
+ * The whiteboard, drawn where it hangs: centred on the back wall, straddling
+ * it the way it does in the office. Every plan view shows it, because a
+ * floor plan that leaves out the one thing on the wall you can walk up to
+ * and use is a floor plan that misleads you.
+ *
+ * With an `onClick` it becomes a way to go there; without one it's a
+ * landmark, which is all the desk picker and the layout editor need — the
+ * board's position follows the walls and isn't anyone's to drag.
+ */
+export function BoardPlate({ room, zoom, onClick, hint }) {
+  const position = boardPosition(room);
+  const interactive = Boolean(onClick);
+  const Tag = interactive ? "button" : "div";
+
+  return (
+    <Tag
+      {...(interactive
+        ? { type: "button", onClick, "data-target": "", "aria-label": hint ?? "Go to the whiteboard" }
+        : { "aria-hidden": "true" })}
+      className={`absolute z-20 flex items-center justify-center rounded-sm border-2 border-slate-300/70 bg-slate-100 shadow-[0_0_10px_rgba(226,232,240,0.35)] ${
+        interactive ? "transition-colors hover:border-pick hover:bg-white" : ""
+      }`}
+      style={{
+        width: BOARD_WIDTH * PX,
+        height: 0.9 * PX,
+        left: (position.x - room.minX) * PX,
+        top: (room.maxY - position.y) * PX,
+        transform: "translate(-50%, -50%)",
+      }}
+    >
+      {interactive && <TouchPad zoom={zoom} />}
+      <span
+        className="code pointer-events-none whitespace-nowrap text-[8px] font-bold leading-none text-slate-600"
+        style={{ transform: `scale(${Math.min(1, 1 / zoom)})` }}
+      >
+        WHITEBOARD
+      </span>
+    </Tag>
   );
 }
 

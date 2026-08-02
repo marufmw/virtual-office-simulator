@@ -8,7 +8,7 @@ import {
   usePinchZoom,
   useWheelZoom,
 } from "./canvas/officeView";
-import { RoomFrame, ZoomControls, TouchPad } from "./canvas/officeCanvas";
+import { RoomFrame, ZoomControls, TouchPad, BoardPlate } from "./canvas/officeCanvas";
 import { DESK_UNITS } from "../game/deskSize";
 
 const LABEL_ZOOM = 0.45; // below this, plates are too small for text
@@ -70,6 +70,7 @@ export function DeskMap({ desks, room, value, onChange }) {
         }}
       >
         <RoomFrame room={room} zoom={zoom} label={`Office · ${span.w} × ${span.h}`}>
+          <BoardPlate room={room} zoom={zoom} />
           {desks.map((desk) => {
             const selected = desk.id === value;
             const taken = Boolean(desk.occupant);
