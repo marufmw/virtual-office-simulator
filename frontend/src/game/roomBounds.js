@@ -4,7 +4,7 @@
  * layout.js) so the floor plan can show a wall moving out while a desk is
  * still being dragged, before the server has confirmed anything.
  */
-export const DEFAULT_ROOM = { minX: -22, maxX: 22, minY: -15, maxY: 18 };
+export const DEFAULT_ROOM = { minX: -22, maxX: 26, minY: -14, maxY: 12 };
 export const MAX_ROOM = { minX: -80, maxX: 80, minY: -60, maxY: 60 };
 
 const WALL_INSET = 2; // clear floor kept between a desk and a wall

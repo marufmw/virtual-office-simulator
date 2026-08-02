@@ -73,55 +73,48 @@ const SCHEMA = `
 // Columns are 4 units apart, the three desk rows sit at ROW_Y.
 // Desks with a `name` get that user seeded; the rest stay free
 // (anonymous) for whoever joins first.
-const COLUMN_SPACING = 3.5; // keeps the outermost desks clear of the side walls
-const COLUMN_CENTER = 5; // column index that maps to x = 0
-const ROW_Y = { 0: 8, 1: -1, 2: -5.5 };
-
+// The office as it stands: every desk where it actually sits, and who sits
+// at it. Captured from the live floor plan rather than described by a grid,
+// because the plan has been rearranged by hand since and a grid can no
+// longer express it.
+//
+// A seat with a name belongs to that person and is recreated with them on
+// it; the rest are free for whoever walks in first. This is also what
+// `resetLayout` puts the office back to.
 const SEED = [
   // back row
-  { deskId: "TB-046", col: 0, row: 0 },
-  { deskId: "TB-137", col: 1, row: 0 },
-  { deskId: "TB-113", col: 4, row: 0, name: "madhurja" },
-  { deskId: "TB-057", col: 5, row: 0, name: "Siam" },
-  { deskId: "TB-110", col: 6, row: 0, name: "Maruf" },
-  { deskId: "TB-109", col: 7, row: 0, name: "Rashed" },
-  { deskId: "TB-108", col: 9, row: 0, name: "Sidul" },
-  { deskId: "TB-107", col: 10, row: 0, name: "Asad" },
+  { deskId: "TB-046", x: -17, y: 5 },
+  { deskId: "TB-137", x: -13, y: 5 },
+  { deskId: "TB-113", x: -5, y: 5, name: "Sidul", character: "office_man_green" },
+  { deskId: "TB-057", x: -1, y: 5, name: "Siam", character: "office_man_gray" },
+  { deskId: "TB-110", x: 3, y: 5, name: "Maruf", character: "office_man_white_shirt" },
+  { deskId: "TB-109", x: 7, y: 5, name: "Rashed", character: "office_man_green" },
+  { deskId: "TB-108", x: 11, y: 5, name: "Sidul", character: "office_man_green" },
+  { deskId: "TB-107", x: 15, y: 5, name: "Asad", character: "office_man_white_shirt" },
   // middle row
-  { deskId: "TB-042", col: 3, row: 1 },
-  { deskId: "TB-073", col: 4, row: 1 },
-  { deskId: "TB-043", col: 5, row: 1 },
-  { deskId: "TB-136", col: 6, row: 1 },
-  { deskId: "TB-112", col: 7, row: 1 },
-  { deskId: "TB-111", col: 8, row: 1 },
-  { deskId: "TB-045", col: 9, row: 1 },
-  { deskId: "TB-142", col: 10, row: 1 },
+  { deskId: "TB-042", x: -9, y: -3 },
+  { deskId: "TB-073", x: -5, y: -3 },
+  { deskId: "TB-043", x: -1, y: -3 },
+  { deskId: "TB-136", x: 3, y: -3 },
+  { deskId: "TB-112", x: 7, y: -3 },
+  { deskId: "TB-111", x: 11, y: -3 },
+  { deskId: "TB-045", x: 17, y: -3 },
+  { deskId: "TB-142", x: 21, y: -3 },
   // front row
-  { deskId: "TB-114", col: 0, row: 2 },
-  { deskId: "TB-105", col: 3, row: 2 },
-  { deskId: "TB-041", col: 4, row: 2 },
-  { deskId: "TB-040", col: 5, row: 2 },
-  { deskId: "TB-005", col: 6, row: 2 },
-  { deskId: "TB-044", col: 9, row: 2 },
+  { deskId: "TB-114", x: -17, y: -7 },
+  { deskId: "TB-105", x: -7, y: -7 },
+  { deskId: "TB-041", x: -3, y: -7 },
+  { deskId: "TB-040", x: 1, y: -7 },
+  { deskId: "TB-005", x: 5, y: -7 },
+  { deskId: "TB-044", x: 17, y: -7 },
 ];
 
-const SEED_CHARACTERS = [
-  "office_man_black_suit",
-  "office_man_green",
-  "office_man_white_shirt",
-  "office_man_gray",
-  "office_man_dark_red",
-];
-
+const DEFAULT_CHARACTER = "office_man_white_shirt";
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 
-// The room starts at the size the game was originally built around
-const DEFAULT_ROOM = { minX: -22, maxX: 22, minY: -15, maxY: 18 };
+// The walls as they currently stand
+const DEFAULT_ROOM = { minX: -22, maxX: 26, minY: -14, maxY: 12 };
 
-const seedDeskPos = ({ col, row }) => ({
-  x: (col - COLUMN_CENTER) * COLUMN_SPACING,
-  y: ROW_Y[row],
-});
 
 const saveRoom = async (room) => {
   await query(
@@ -143,18 +136,23 @@ const getRoom = async () => {
  * overwrites it. `resetLayout` calls this again after clearing the room.
  */
 async function seedOffice() {
-  for (const [i, seat] of SEED.entries()) {
-    const { x, y } = seedDeskPos(seat);
+  for (const seat of SEED) {
     await query(
       `INSERT INTO desks (id, x, y) VALUES ($1, $2, $3)
          ON CONFLICT (id) DO UPDATE SET x = $2, y = $3`,
-      [seat.deskId, x, y]
+      [seat.deskId, seat.x, seat.y]
     );
     if (!seat.name) continue;
     await query(
       `INSERT INTO players (desk_id, name, "character", x, y) VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (desk_id) DO NOTHING`,
-      [seat.deskId, seat.name, SEED_CHARACTERS[i % SEED_CHARACTERS.length], x, y + SPAWN_OFFSET_Y]
+      [
+        seat.deskId,
+        seat.name,
+        seat.character ?? DEFAULT_CHARACTER,
+        seat.x,
+        seat.y + SPAWN_OFFSET_Y,
+      ]
     );
   }
 }
