@@ -125,7 +125,7 @@ export function OfficeMap({ world, onWalkTo, onClose }) {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          className={`grab-surface relative min-h-0 flex-1 overflow-hidden ${
+          className={`grab-surface relative h-[56dvh] shrink-0 overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1 ${
             panning ? "cursor-grabbing" : "cursor-crosshair"
           }`}
           style={{
@@ -271,20 +271,20 @@ export function OfficeMap({ world, onWalkTo, onClose }) {
 
         {/* Who's here. A rail beside the plan with room, a strip under it
             without — either way, a name is a place you can walk to. */}
-        <aside className="shrink-0 border-t border-line/50 lg:w-64 lg:border-l lg:border-t-0">
-          <p className="code hidden px-4 pt-4 text-[10px] uppercase tracking-wider text-muted lg:block">
+        <aside className="flex min-h-0 flex-1 flex-col border-t border-line/50 lg:w-64 lg:flex-none lg:border-l lg:border-t-0">
+          <p className="code shrink-0 px-4 pt-4 text-[10px] uppercase tracking-wider text-muted">
             <Users size={11} className="mr-1.5 inline align-[-1px]" />
             In the office
           </p>
 
-          <ul className="flex gap-2 overflow-x-auto p-3 lg:max-h-full lg:flex-col lg:overflow-y-auto lg:p-3">
+          <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]">
             {others.length === 0 && (
               <li className="px-1 py-2 text-xs text-muted">Nobody else is in right now.</li>
             )}
             {others.map((p) => {
               const away = distanceTo(p);
               return (
-                <li key={p.id} className="shrink-0 lg:w-full">
+                <li key={p.id} className="shrink-0">
                   <button
                     type="button"
                     onClick={() => walk(p.x, p.y - STAND_OFFSET)}
