@@ -361,6 +361,28 @@ export function createWorld(container) {
       desks.delete(id);
     },
 
+    /**
+     * Plain snapshots of where the furniture and the people are, for the
+     * map overlay — it draws its own plan in the DOM rather than sharing
+     * the scene, so it wants numbers, not meshes.
+     */
+    deskList() {
+      return [...desks].map(([id, desk]) => ({
+        id,
+        x: desk.group.position.x,
+        y: desk.group.position.y,
+      }));
+    },
+
+    playerList() {
+      return [...players].map(([id, player]) => ({
+        id,
+        name: player.name,
+        x: player.group.position.x,
+        y: player.group.position.y,
+      }));
+    },
+
     addPlayer(id, x, y, character, name) {
       const player = createAnimatedPlayer(character);
       const group = new THREE.Group();

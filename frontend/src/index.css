@@ -81,6 +81,57 @@ select {
   touch-action: none;
 }
 
+/* --- Map overlay ------------------------------------------------------- */
+
+/* The halo around your own marker, so you find yourself instantly */
+@keyframes map-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+/* The ripple left where you tapped to walk */
+@keyframes map-ping {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* Someone else moving catches the eye for a moment */
+@keyframes map-blip {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.map-pulse {
+  animation: map-pulse 2.4s ease-out infinite;
+}
+.map-ping {
+  animation: map-ping 700ms ease-out forwards;
+}
+.map-blip {
+  animation: map-blip 2s ease-in-out infinite;
+}
+
 /* Desk codes and other machine-ish labels */
 .code {
   font-family: var(--font-code);

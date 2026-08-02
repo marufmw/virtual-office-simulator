@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { MessageCircle, Armchair } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 const STICK_RADIUS = 52; // how far the thumb can push, in screen pixels
 const DEAD_ZONE = 0.14; // below this the stick reads as centred
@@ -72,28 +72,15 @@ function Stick({ stickRef }) {
 }
 
 /**
- * Everything the keyboard does, put within reach of a thumb: the stick on
- * the left, and on the right the two things E and right-click do — talk to
- * whoever you're standing next to, and walk back to your own desk.
+ * The two things a thumb needs while walking around: the stick, and the
+ * button that does what E does — talk to whoever you're standing next to.
+ * Everything less urgent lives in the row of buttons up top.
  *
  * Shown only on touch devices; a keyboard already has all of this.
  */
-export function TouchControls({ stickRef, canInteract, interactLabel, onInteract, onGoToDesk }) {
+export function TouchControls({ stickRef, canInteract, interactLabel, onInteract }) {
   return (
     <>
-      {/* Going back to your desk is a settled, deliberate thing rather than
-          a thumb action, so it sits with the settings cog up top */}
-      <button
-        type="button"
-        onClick={onGoToDesk}
-        title="Go to my desk"
-        aria-label="Go to my desk"
-        style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
-        className="absolute right-[4.5rem] z-10 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/80 text-slate-300 shadow-lg transition-colors active:bg-slate-700 active:text-white sm:right-20"
-      >
-        <Armchair size={20} />
-      </button>
-
       {/* Lifted clear of the bottom edge — a stick sitting right on it
           fights the home indicator and the browser's own swipe gestures */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between px-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Settings } from "lucide-react";
 import { ProfileForm } from "./ProfileForm";
+import { TopButton } from "./TopControls";
 
 /**
  * Floating settings button that opens a modal for editing the
@@ -11,17 +12,10 @@ export function SettingsButton({ joinInfo, onSave }) {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="Settings"
-        aria-label="Settings"
-        // The safe-area gap belongs above the button, not inside it — as
-        // padding it pushed the cog off centre
-        style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
-        className="absolute right-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/80 text-slate-300 shadow-lg transition-colors hover:bg-slate-700 hover:text-white sm:right-4"
-      >
+      {/* Positioned by the row it sits in, not by itself */}
+      <TopButton onClick={() => setOpen(true)} label="Settings">
         <Settings size={20} />
-      </button>
+      </TopButton>
       {open && (
         <ProfileForm
           title="Your desk"

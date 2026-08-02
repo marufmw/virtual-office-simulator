@@ -11,6 +11,8 @@ import { SettingsButton } from "./components/SettingsButton";
 import { ContextMenu } from "./components/ContextMenu";
 import { ChatPanel } from "./components/ChatPanel";
 import { TouchControls } from "./components/TouchControls";
+import { TopControls } from "./components/TopControls";
+import { OfficeMap } from "./components/OfficeMap";
 import { SeatClaim, SeatContested } from "./components/SeatClaim";
 import { ProfileForm } from "./components/ProfileForm";
 
@@ -30,6 +32,7 @@ function Office({ world, joinInfo, onProfileChange }) {
   // then { deskId, active, holder, waiting }
   const [seat, setSeat] = useState(null);
   const [pickingDesk, setPickingDesk] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   const appendMessage = useCallback((peerId, message) => {
     setConversations((prev) => ({ ...prev, [peerId]: [...(prev[peerId] ?? []), message] }));
@@ -98,6 +101,17 @@ function Office({ world, joinInfo, onProfileChange }) {
     world.walkTo(world.deskStandPosition(world.myDeskId));
   }, [world]);
 
+  // M for map, the way most games spell it
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key.toLowerCase() !== "m") return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+      setMapOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const chatIsOpen = huddleOpen || chatPeerId !== null;
 
   // Somebody else has this character. Nothing in the office is usable from
@@ -127,13 +141,26 @@ function Office({ world, joinInfo, onProfileChange }) {
   return (
     <>
       {seat?.active && seat.waiting > 0 && <SeatContested waiting={seat.waiting} />}
-      <SettingsButton
-        joinInfo={joinInfo}
-        onSave={(profile) => {
-          sendProfileRef.current(profile);
-          onProfileChange(profile);
-        }}
-      />
+      <TopControls
+        onOpenMap={() => setMapOpen(true)}
+        onGoToDesk={goToDesk}
+        showGoToDesk={isTouch}
+      >
+        <SettingsButton
+          joinInfo={joinInfo}
+          onSave={(profile) => {
+            sendProfileRef.current(profile);
+            onProfileChange(profile);
+          }}
+        />
+      </TopControls>
+      {mapOpen && (
+        <OfficeMap
+          world={world}
+          onWalkTo={(goal) => world.walkTo(goal)}
+          onClose={() => setMapOpen(false)}
+        />
+      )}
       {/* A long press would fire this at an arbitrary spot; on touch the
           same action is a button in the thumb cluster instead */}
       {!isTouch && <ContextMenu onGoToDesk={goToDesk} />}
@@ -143,7 +170,6 @@ function Office({ world, joinInfo, onProfileChange }) {
           canInteract={nearbyId !== null && !chatIsOpen}
           interactLabel={huddle ? "Join the huddle" : "Chat"}
           onInteract={() => nearbyId !== null && openChat(nearbyId)}
-          onGoToDesk={goToDesk}
         />
       )}
       {/* On a phone the prompt sits above the thumb controls, and there is
