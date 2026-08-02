@@ -55,6 +55,9 @@ function makeFloorTexture(fill = "#aba7a4", grout = "#969390", tiles = 4) {
 
 const PORTRAIT_PULLBACK = 1.35; // how much wider a portrait screen sees
 const BRICK = 2; // world units per brick tile
+// Courses of brick on the top wall. The door is 4 units tall and stands on
+// the wall's base, so three courses (6 units) clear it comfortably.
+const TOP_WALL_COURSES = 3;
 const TILE = 10; // world units per checker tile
 
 // Solid rectangles for collision: [centerX, centerY, halfWidth, halfHeight]
@@ -120,15 +123,24 @@ export function createWorld(container) {
     floor.position.set((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, -0.9);
     roomGroup.add(floor);
 
-    // Brick walls enclosing the office
+    // Brick walls enclosing the office. The top one is the only wall seen
+    // face-on, so it is laid several courses high — tall enough to hold the
+    // door rather than have it poke out over the top. The other three are
+    // seen edge-on and a single course reads as a wall just fine.
+    const wallTop = bounds.maxY + (TOP_WALL_COURSES - 1) * BRICK;
+
     for (let x = bounds.minX; x <= bounds.maxX; x += BRICK) {
-      for (const y of [bounds.minY, bounds.maxY]) {
+      for (let y = bounds.maxY; y <= wallTop; y += BRICK) {
         const brick = createPropMesh("brick", BRICK);
         brick.position.set(x, y, -0.4);
         roomGroup.add(brick);
       }
+      const bottom = createPropMesh("brick", BRICK);
+      bottom.position.set(x, bounds.minY, -0.4);
+      roomGroup.add(bottom);
     }
-    for (let y = bounds.minY; y <= bounds.maxY; y += BRICK) {
+    // The sides run all the way up the top wall, so the corners are filled
+    for (let y = bounds.minY; y <= wallTop; y += BRICK) {
       for (const x of [bounds.minX, bounds.maxX]) {
         const brick = createPropMesh("brick", BRICK);
         brick.position.set(x, y, -0.4);
