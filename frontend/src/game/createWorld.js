@@ -18,9 +18,44 @@ function makeTiledTexture(path) {
   return texture;
 }
 
+const CELL_PX = 16; // texture pixels per floor tile
+const GROUT_PX = 1; // and how many of them the seam between tiles takes
+
+/**
+ * The office floor: one flat colour, seamed into tiles by a slightly darker
+ * line along each one's edge. Drawn rather than loaded, so the tone is
+ * exactly what it says it is.
+ *
+ * Only the top and left edge of each tile is drawn. The texture repeats, so
+ * every tile's right and bottom edge is its neighbour's left and top — one
+ * line between any two tiles, and no double-width seam at the joins.
+ */
+function makeFloorTexture(fill = "#aba7a4", grout = "#969390", tiles = 4) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = tiles * CELL_PX;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = grout;
+  for (let i = 0; i < tiles; i++) {
+    const at = i * CELL_PX;
+    ctx.fillRect(at, 0, GROUT_PX, canvas.height); // left edge
+    ctx.fillRect(0, at, canvas.width, GROUT_PX); // top edge
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
 const PORTRAIT_PULLBACK = 1.35; // how much wider a portrait screen sees
 const BRICK = 2; // world units per brick tile
-const TILE = 2; // world units per checker tile
+const TILE = 10; // world units per checker tile
 
 // Solid rectangles for collision: [centerX, centerY, halfWidth, halfHeight]
 const wallCollidersFor = (room) => {
@@ -63,7 +98,7 @@ export function createWorld(container) {
 
   // Floor, walls and their fittings. Rebuilt whenever the room grows, so
   // they live in one group that can be emptied wholesale.
-  const floorTexture = makeTiledTexture("/sprites/office/floor_tile.png");
+  const floorTexture = makeFloorTexture();
   const roomGroup = new THREE.Group();
   scene.add(roomGroup);
   let room = DEFAULT_ROOM;
@@ -433,6 +468,7 @@ export function createWorld(container) {
       scene.remove(roomGroup);
       roomGroup.traverse((obj) => obj.geometry?.dispose());
       floorMaterial.dispose();
+      floorTexture.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
     },
