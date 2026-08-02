@@ -6,7 +6,6 @@ import {
   Maximize2,
   RotateCcw,
   Trash2,
-  User,
   X,
   Check,
 } from "lucide-react";
@@ -22,6 +21,7 @@ import {
   useWheelZoom,
 } from "./canvas/officeView";
 import { RoomFrame, TouchPad, BoardPlate } from "./canvas/officeCanvas";
+import { SeatPanel } from "./SeatPanel";
 
 const GUIDE_TOLERANCE = 0.4; // how close counts as aligned with another desk
 const MIN_SPAN = 12; // mirrors MIN_ROOM_SPAN in the backend's layout.js
@@ -47,6 +47,8 @@ export function LayoutEditor({
   onAdd,
   onDelete,
   onReseat,
+  onRename,
+  onClearSeat,
   onResizeRoom,
   onReset,
   onClose,
@@ -625,17 +627,13 @@ export function LayoutEditor({
                 />
               </div>
 
-              <div>
-                <p className="code text-[10px] uppercase text-muted">Seat</p>
-                {selected.occupant ? (
-                  <p className="mt-1 flex items-center gap-2 text-sm text-paper">
-                    <User size={14} className="text-lit" />
-                    {selected.occupant}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-sm text-muted">Open</p>
-                )}
-              </div>
+              <SeatPanel
+                desk={selected}
+                desks={desks}
+                onRename={onRename}
+                onReseat={onReseat}
+                onClear={onClearSeat}
+              />
 
               <button
                 type="button"

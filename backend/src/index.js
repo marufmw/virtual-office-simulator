@@ -19,6 +19,7 @@ const BOARD_SAVE_INTERVAL_MS = 3000; // and how often a changed whiteboard is wr
 const BOARD_ID = "office"; // the one board there is, so far
 const SPAWN_OFFSET_Y = -1.6; // players appear just in front of their desk
 const MAX_MESSAGE_LENGTH = 1000;
+const MAX_NAME_LENGTH = 40;
 
 // HTTP server: the desk list and floor-plan editing. Everything that
 // happens once you're in the room is WebSocket.
@@ -144,6 +145,40 @@ async function handleRequest(req, res) {
     await db.removeDesk(id);
     broadcast({ type: "desk_removed", id });
     return send(res, 200, { id });
+  }
+
+  // Renaming or clearing whoever sits at a desk, from the layout editor.
+  // Reseating them is /api/reseat; this is about the person, not the seat.
+  const occupantMatch = path.match(/^\/api\/desks\/([^/]+)\/occupant$/);
+  if (occupantMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+    const deskId = decodeURIComponent(occupantMatch[1]);
+    const seated = await db.getPlayer(deskId);
+    if (!seated) return send(res, 404, { error: "Nobody sits there" });
+
+    const session = onlinePlayerAtDesk(deskId);
+
+    if (req.method === "DELETE") {
+      // Someone still connected would be left as a character nobody is,
+      // so the seat is only cleared once they've gone — the same rule
+      // that stops a desk being deleted out from under its occupant
+      if (session) return send(res, 409, { error: "They're here right now — ask them to leave" });
+      await db.clearSeat(deskId);
+      broadcast({ type: "desk_vacated", id: deskId });
+      return send(res, 200, { id: deskId });
+    }
+
+    const body = (await readJson(req)) ?? {};
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, MAX_NAME_LENGTH) : "";
+    if (!name) return send(res, 400, { error: "A name can't be empty" });
+
+    await db.updateProfile(deskId, { deskId, name, character: seated.character });
+    // Whoever is playing them right now should see it too
+    if (session) {
+      session.player.name = name;
+      broadcast({ type: "update", player: publicPlayer(session.id, session.player) });
+    }
+    broadcast({ type: "occupant_renamed", id: deskId, name });
+    return send(res, 200, { id: deskId, name });
   }
 
   if (path === "/api/reseat" && req.method === "POST") {

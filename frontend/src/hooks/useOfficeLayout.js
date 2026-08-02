@@ -107,6 +107,27 @@ export function useOfficeLayout({ onSeatChange, onDeskRemoved } = {}) {
     [edit, onSeatChange]
   );
 
+  const renameOccupant = useCallback(
+    (deskId, name) =>
+      edit(
+        (current) => current.map((d) => (d.id === deskId ? { ...d, occupant: name } : d)),
+        () => layout.renameOccupant(deskId, name)
+      ),
+    [edit]
+  );
+
+  const clearSeat = useCallback(
+    (deskId) =>
+      edit(
+        (current) =>
+          current.map((d) =>
+            d.id === deskId ? { ...d, occupant: null, occupant_character: null } : d
+          ),
+        () => layout.clearSeat(deskId)
+      ),
+    [edit]
+  );
+
   // Resizing by hand, which unlike dragging a desk may also shrink the room
   const resizeRoom = useCallback(
     (next) => edit((current) => current, () => layout.setRoom(next), next),
@@ -135,6 +156,8 @@ export function useOfficeLayout({ onSeatChange, onDeskRemoved } = {}) {
     moveDesk,
     removeDesk,
     reseat,
+    renameOccupant,
+    clearSeat,
     resizeRoom,
     reset,
   };

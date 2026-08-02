@@ -34,6 +34,16 @@ export const moveDesk = (id, x, y) =>
 export const deleteDesk = (id) =>
   request(`/api/desks/${encodeURIComponent(id)}`, { method: "DELETE" });
 
+// The person at a desk, rather than the desk itself
+export const renameOccupant = (deskId, name) =>
+  request(`/api/desks/${encodeURIComponent(deskId)}/occupant`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+
+export const clearSeat = (deskId) =>
+  request(`/api/desks/${encodeURIComponent(deskId)}/occupant`, { method: "DELETE" });
+
 export const reseatPerson = (fromDeskId, toDeskId) =>
   request("/api/reseat", { method: "POST", body: JSON.stringify({ fromDeskId, toDeskId }) });
 

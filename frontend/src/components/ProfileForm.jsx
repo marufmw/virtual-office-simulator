@@ -85,6 +85,8 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
         onAdd={office.addDesk}
         onDelete={office.removeDesk}
         onReseat={office.reseat}
+        onRename={office.renameOccupant}
+        onClearSeat={office.clearSeat}
         onResizeRoom={office.resizeRoom}
         onReset={handleReset}
         onClose={() => setEditing(false)}

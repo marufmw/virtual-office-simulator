@@ -195,6 +195,14 @@ module.exports = {
 
   loadPlayers: () => all("SELECT * FROM players"),
 
+  // Empties a seat: the desk stays, the person on it doesn't. Their chat
+  // history goes with them — it was keyed to a desk they no longer hold,
+  // and leaving it would hand it to whoever sits there next.
+  clearSeat: async (deskId) => {
+    await query("DELETE FROM messages WHERE from_desk = $1 OR to_desk = $1", [deskId]);
+    await query("DELETE FROM players WHERE desk_id = $1", [deskId]);
+  },
+
   saveMessage: (fromDesk, toDesk, body, createdAt) =>
     query(
       "INSERT INTO messages (from_desk, to_desk, body, created_at) VALUES ($1, $2, $3, $4)",
