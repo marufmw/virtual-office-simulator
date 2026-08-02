@@ -4,13 +4,18 @@ import { useKeyboard } from "./hooks/useKeyboard";
 import { useOfficeSocket } from "./hooks/useOfficeSocket";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { useInteraction } from "./hooks/useInteraction";
+import { useIsTouch } from "./hooks/useIsTouch";
+import { useTapToWalk } from "./hooks/useTapToWalk";
 import { JoinForm } from "./components/JoinForm";
 import { SettingsButton } from "./components/SettingsButton";
 import { ContextMenu } from "./components/ContextMenu";
 import { ChatPanel } from "./components/ChatPanel";
+import { TouchControls } from "./components/TouchControls";
 
 function Office({ world, joinInfo, onProfileChange }) {
   const keysRef = useKeyboard();
+  const isTouch = useIsTouch();
+  const stickRef = useRef({ x: 0, y: 0 });
   const joinInfoRef = useRef(joinInfo);
   joinInfoRef.current = joinInfo;
 
@@ -60,7 +65,8 @@ function Office({ world, joinInfo, onProfileChange }) {
 
   const { sendMoveRef, sendProfileRef, sendDmRef, sendHuddleRef, requestHistoryRef } =
     useOfficeSocket(world, joinInfoRef, chatRef);
-  useGameLoop(world, keysRef, sendMoveRef);
+  useGameLoop(world, keysRef, sendMoveRef, stickRef);
+  useTapToWalk(world, isTouch);
 
   // Interacting opens the huddle when I'm standing in a group, since that's
   // the conversation everyone around me is already having
@@ -76,6 +82,11 @@ function Office({ world, joinInfo, onProfileChange }) {
     [huddle, requestHistoryRef]
   );
   const nearbyId = useInteraction(world, openChat);
+  const goToDesk = useCallback(() => {
+    world.walkTo(world.deskStandPosition(world.myDeskId));
+  }, [world]);
+
+  const chatIsOpen = huddleOpen || chatPeerId !== null;
 
   return (
     <>
@@ -86,15 +97,29 @@ function Office({ world, joinInfo, onProfileChange }) {
           onProfileChange(profile);
         }}
       />
-      <ContextMenu
-        onGoToDesk={() => {
-          world.walkTo(world.deskStandPosition(world.myDeskId));
-        }}
-      />
-      {nearbyId !== null && chatPeerId === null && !huddleOpen && (
+      {/* A long press would fire this at an arbitrary spot; on touch the
+          same action is a button in the thumb cluster instead */}
+      {!isTouch && <ContextMenu onGoToDesk={goToDesk} />}
+      {isTouch && (
+        <TouchControls
+          stickRef={stickRef}
+          canInteract={nearbyId !== null && !chatIsOpen}
+          interactLabel={huddle ? "Join the huddle" : "Chat"}
+          onInteract={() => nearbyId !== null && openChat(nearbyId)}
+          onGoToDesk={goToDesk}
+        />
+      )}
+      {/* On a phone the prompt sits above the thumb controls, and there is
+          no E to press — the bubble and the chat button are the way in */}
+      {nearbyId !== null && !chatIsOpen && !isTouch && (
         <p className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-sm text-slate-200 shadow-lg">
           Press <kbd className="font-semibold text-sky-400">E</kbd> or click the bubble to{" "}
           {huddle ? `join the huddle · ${huddle.members.length} people` : "chat"}
+        </p>
+      )}
+      {nearbyId !== null && !chatIsOpen && isTouch && huddle && (
+        <p className="pointer-events-none absolute bottom-44 left-1/2 z-10 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-xs text-slate-200 shadow-lg">
+          Huddle · {huddle.members.length} people
         </p>
       )}
       {huddle && huddleOpen ? (
@@ -105,6 +130,7 @@ function Office({ world, joinInfo, onProfileChange }) {
           messages={huddle.messages}
           onSend={(text) => sendHuddleRef.current(text)}
           onClose={() => setHuddleOpen(false)}
+          isTouch={isTouch}
         />
       ) : (
         chatPeerId !== null && (
@@ -115,6 +141,7 @@ function Office({ world, joinInfo, onProfileChange }) {
             disabled={nearbyId !== chatPeerId}
             onSend={(text) => sendDmRef.current(chatPeerId, text)}
             onClose={() => setChatPeerId(null)}
+            isTouch={isTouch}
           />
         )
       )}

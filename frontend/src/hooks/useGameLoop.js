@@ -13,8 +13,11 @@ import {
 /**
  * Runs the game loop: WASD movement, position broadcasting,
  * camera follow and rendering.
+ *
+ * `stickRef` is the on-screen joystick's `{ x, y }`, zero when nobody is
+ * touching it. It's optional — with a keyboard there is no stick.
  */
-export function useGameLoop(world, keysRef, sendMoveRef) {
+export function useGameLoop(world, keysRef, sendMoveRef, stickRef) {
   useEffect(() => {
     const clock = new THREE.Clock();
     let sendTimer = 0;
@@ -31,6 +34,14 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
       if (keys.has("s")) dy -= 1;
       if (keys.has("a")) dx -= 1;
       if (keys.has("d")) dx += 1;
+
+      // A thumb on the stick overrides the keys, and unlike them carries a
+      // magnitude: a small push is a slow walk
+      const stick = stickRef?.current;
+      if (stick && (stick.x !== 0 || stick.y !== 0)) {
+        dx = stick.x;
+        dy = stick.y;
+      }
 
       // Manual input cancels any auto-walk
       if (dx !== 0 || dy !== 0) world.cancelPath();
@@ -69,8 +80,11 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
 
       if ((dx !== 0 || dy !== 0) && world.myId !== null) {
         const length = Math.hypot(dx, dy);
-        const stepX = (dx / length) * SPEED * delta;
-        const stepY = (dy / length) * SPEED * delta;
+        // Direction from the vector, pace from how far it reaches. Keys are
+        // always at full stretch; a half-pushed stick walks at half speed.
+        const throttle = Math.min(1, length);
+        const stepX = (dx / length) * SPEED * throttle * delta;
+        const stepY = (dy / length) * SPEED * throttle * delta;
         const { x, y } = world.myPos;
 
         // Client-side collision prediction; the server re-validates.
@@ -158,9 +172,16 @@ export function useGameLoop(world, keysRef, sendMoveRef) {
     const onResize = () => world.resize();
     window.addEventListener("resize", onResize);
 
+    // A phone's viewport changes size when the address bar slides away or
+    // the keyboard opens, and neither fires a plain resize on every browser
+    window.visualViewport?.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+
     return () => {
       world.renderer.setAnimationLoop(null);
       window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
     };
-  }, [world, keysRef, sendMoveRef]);
+  }, [world, keysRef, sendMoveRef, stickRef]);
 }

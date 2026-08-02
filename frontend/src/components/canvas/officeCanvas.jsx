@@ -39,6 +39,17 @@ export function RoomFrame({ room, zoom, label, children }) {
   );
 }
 
+/**
+ * An invisible margin that keeps a small target reachable by thumb. Plan
+ * views draw desks at their true size inside a scaled container, so zoomed
+ * out to fit the whole office a desk plate is only a few pixels across and
+ * a wall handle thinner still. Dividing by the zoom cancels that scaling,
+ * leaving a constant pad in screen pixels however far out the view is.
+ */
+export function TouchPad({ zoom, pad = 11 }) {
+  return <span aria-hidden="true" className="absolute" style={{ inset: -pad / zoom }} />;
+}
+
 /** The zoom cluster shared by both plan views. */
 export function ZoomControls({ zoom, onZoomIn, onZoomOut, onFit }) {
   return (

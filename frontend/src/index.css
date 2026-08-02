@@ -19,6 +19,71 @@
   --font-code: "JetBrains Mono", ui-monospace, monospace;
 }
 
+/**
+ * The office fills the viewport and nothing else scrolls. On a phone the
+ * browser chrome comes and goes, so the height is dvh rather than vh —
+ * otherwise the joystick sits under the address bar.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  height: 100dvh;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-ink);
+  /* No pull-to-refresh or rubber-banding while dragging a desk around */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The game canvas and the plan views handle their own gestures */
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+/**
+ * Safari zooms the page in when a focused input is smaller than 16px, and
+ * never zooms back out. Chat and forms are typed into on a phone, so the
+ * text is full size there and only shrinks once there's a mouse.
+ */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+@media (pointer: fine) {
+  input,
+  textarea,
+  select {
+    font-size: inherit;
+  }
+}
+
+/* Room for the notch and the home indicator */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-inset {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+}
+
+/* Anything the finger drags rather than scrolls */
+.grab-surface {
+  touch-action: none;
+}
+
 /* Desk codes and other machine-ish labels */
 .code {
   font-family: var(--font-code);

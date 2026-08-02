@@ -14,7 +14,8 @@ export function SettingsButton({ joinInfo, onSave }) {
       <button
         onClick={() => setOpen(true)}
         title="Settings"
-        className="absolute right-4 top-4 z-10 rounded-full bg-slate-800/80 p-3 text-slate-300 shadow-lg transition-colors hover:bg-slate-700 hover:text-white"
+        aria-label="Settings"
+        className="safe-top absolute right-3 top-3 z-10 rounded-full bg-slate-800/80 p-3 text-slate-300 shadow-lg transition-colors hover:bg-slate-700 hover:text-white sm:right-4 sm:top-4"
       >
         <Settings size={20} />
       </button>

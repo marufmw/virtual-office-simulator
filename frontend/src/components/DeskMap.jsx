@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { User } from "lucide-react";
-import { PX, CANVAS_BACKDROP, deskTone, useCanvasView } from "./canvas/officeView";
-import { RoomFrame, ZoomControls } from "./canvas/officeCanvas";
+import {
+  PX,
+  CANVAS_BACKDROP,
+  deskTone,
+  useCanvasView,
+  usePinchZoom,
+  useWheelZoom,
+} from "./canvas/officeView";
+import { RoomFrame, ZoomControls, TouchPad } from "./canvas/officeCanvas";
 import { DESK_UNITS } from "../game/deskSize";
 
 const LABEL_ZOOM = 0.45; // below this, plates are too small for text
@@ -14,6 +21,8 @@ const LABEL_ZOOM = 0.45; // below this, plates are too small for text
  */
 export function DeskMap({ desks, room, value, onChange }) {
   const { canvasRef, zoom, pan, setView, fit, zoomAround } = useCanvasView(room);
+  const pinch = usePinchZoom({ zoom, zoomAround });
+  useWheelZoom(canvasRef, zoomAround);
   const [panning, setPanning] = useState(null);
   const [hovered, setHovered] = useState(null);
 
@@ -22,14 +31,23 @@ export function DeskMap({ desks, room, value, onChange }) {
   const showLabels = zoom >= LABEL_ZOOM;
 
   function onPointerDown(e) {
+    pinch.onPointerDown(e);
     if (e.target.closest("[data-desk]")) return;
+    // A second finger means a pinch, and the pan would fight it
+    if (pinch.pinching) return setPanning(null);
     canvasRef.current.setPointerCapture(e.pointerId);
     setPanning({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   }
 
   function onPointerMove(e) {
-    if (!panning) return;
+    pinch.onPointerMove(e);
+    if (!panning || pinch.pinching) return;
     setView({ zoom, panX: e.clientX - panning.x, panY: e.clientY - panning.y });
+  }
+
+  function onPointerUp(e) {
+    pinch.onPointerUp(e);
+    setPanning(null);
   }
 
   return (
@@ -37,13 +55,9 @@ export function DeskMap({ desks, room, value, onChange }) {
       ref={canvasRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={() => setPanning(null)}
-      onPointerCancel={() => setPanning(null)}
-      onWheel={(e) => {
-        e.preventDefault();
-        zoomAround(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
-      }}
-      className={`relative h-full w-full overflow-hidden ${
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      className={`grab-surface relative h-full w-full overflow-hidden ${
         panning ? "cursor-grabbing" : "cursor-grab"
       }`}
       style={CANVAS_BACKDROP}
@@ -83,10 +97,11 @@ export function DeskMap({ desks, room, value, onChange }) {
                   aria-label={
                     taken ? `Desk ${desk.id}, ${desk.occupant} sits here` : `Desk ${desk.id}, open`
                   }
-                  className={`flex h-full w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-sm border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-pick ${deskTone(
+                  className={`relative flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-sm border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-pick ${deskTone(
                     { selected, taken, hoverable: true }
                   )}`}
                 >
+                  <TouchPad zoom={zoom} />
                   {showLabels && (
                     <span
                       className={`code text-[9px] leading-none font-bold ${
@@ -132,7 +147,9 @@ export function DeskMap({ desks, room, value, onChange }) {
 
       {/* Legend and zoom, floated over the canvas like the editor's */}
       <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-4 rounded-md border border-line bg-ink/90 px-3 py-2 text-[11px] text-muted shadow-lg backdrop-blur">
+        {/* The legend is the first thing to go when the screen is narrow —
+            the colours are explained by the badge on the right anyway */}
+        <div className="pointer-events-auto hidden flex-wrap items-center gap-4 rounded-md border border-line bg-ink/90 px-3 py-2 text-[11px] text-muted shadow-lg backdrop-blur sm:flex">
           <span className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-sm border border-lit/50 bg-lit/20" />
             Taken

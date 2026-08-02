@@ -13,8 +13,15 @@ import {
 import { LAYOUT_SNAP } from "../config";
 import { growRoom, clampToMaxRoom, MAX_ROOM } from "../game/roomBounds";
 import { DESK_UNITS } from "../game/deskSize";
-import { PX, CANVAS_BACKDROP, deskTone, useCanvasView } from "./canvas/officeView";
-import { RoomFrame } from "./canvas/officeCanvas";
+import {
+  PX,
+  CANVAS_BACKDROP,
+  deskTone,
+  useCanvasView,
+  usePinchZoom,
+  useWheelZoom,
+} from "./canvas/officeView";
+import { RoomFrame, TouchPad } from "./canvas/officeCanvas";
 
 const GUIDE_TOLERANCE = 0.4; // how close counts as aligned with another desk
 const MIN_SPAN = 12; // mirrors MIN_ROOM_SPAN in the backend's layout.js
@@ -71,6 +78,8 @@ export function LayoutEditor({
     toWorld,
     zoomAround,
   } = useCanvasView(shown);
+  const pinch = usePinchZoom({ zoom, zoomAround });
+  useWheelZoom(canvasRef, zoomAround);
 
   // Alignment guides: a dragged desk snaps to another's row or column
   function alignedPosition(id, x, y) {
@@ -109,7 +118,9 @@ export function LayoutEditor({
   }
 
   function onCanvasPointerDown(e) {
+    pinch.onPointerDown(e);
     if (e.target.closest("[data-desk], [data-wall], [data-editor]")) return;
+    if (pinch.pinching) return setPanning(null);
     // Space or the middle button pans from anywhere, as does empty canvas
     if (spaceHeld || e.button === 1 || tool === "select") {
       canvasRef.current.setPointerCapture(e.pointerId);
@@ -119,6 +130,10 @@ export function LayoutEditor({
   }
 
   function onCanvasPointerMove(e) {
+    pinch.onPointerMove(e);
+    // A pinch is a view change, not a drag of anything in the room
+    if (pinch.pinching) return;
+
     const world = toWorld(e.clientX, e.clientY);
     setCursor({ x: round1(world.x), y: round1(world.y) });
 
@@ -152,7 +167,8 @@ export function LayoutEditor({
     setDrag((d) => ({ ...d, ...aligned, moved: true }));
   }
 
-  function onCanvasPointerUp() {
+  function onCanvasPointerUp(e) {
+    if (e) pinch.onPointerUp(e);
     if (panning) {
       setPanning(null);
       return;
@@ -185,11 +201,6 @@ export function LayoutEditor({
     setCode("");
     setPending(limited);
     setTool("select");
-  }
-
-  function onWheel(e) {
-    e.preventDefault();
-    zoomAround(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
   }
 
   // Keyboard shortcuts, ignored while typing into a field
@@ -264,10 +275,10 @@ export function LayoutEditor({
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-ink text-paper">
       {/* Toolbar */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-line/60 px-4 py-2.5">
+      <header className="safe-top flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/60 px-4 py-2.5">
         <h1 className="font-display text-base font-extrabold tracking-tight">Office layout</h1>
 
-        <div className="ml-2 flex items-center gap-1 rounded-md border border-line p-0.5">
+        <div className="flex items-center gap-1 rounded-md border border-line p-0.5">
           <ToolButton
             active={tool === "select"}
             onClick={() => setTool("select")}
@@ -297,7 +308,7 @@ export function LayoutEditor({
             type="button"
             onClick={fitToRoom}
             title="Fit the office — 0"
-            className="code min-w-14 rounded-md border border-line px-2 py-1.5 text-[11px] text-muted transition-colors hover:border-paper/40 hover:text-paper"
+            className="code hidden min-w-14 rounded-md border border-line px-2 py-1.5 text-[11px] text-muted transition-colors hover:border-paper/40 hover:text-paper sm:block"
           >
             {Math.round(zoom * 100)}%
           </button>
@@ -326,7 +337,7 @@ export function LayoutEditor({
             className="flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-sm text-muted transition-colors hover:border-red-400/60 hover:text-red-300"
           >
             <RotateCcw size={14} />
-            Reset
+            <span className="hidden sm:inline">Reset</span>
           </button>
           <button
             type="button"
@@ -386,8 +397,7 @@ export function LayoutEditor({
           onPointerUp={onCanvasPointerUp}
           onPointerCancel={onCanvasPointerUp}
           onClick={onCanvasClick}
-          onWheel={onWheel}
-          className={`relative min-w-0 flex-1 overflow-hidden ${cursorClass}`}
+          className={`grab-surface relative min-w-0 flex-1 overflow-hidden ${cursorClass}`}
           style={CANVAS_BACKDROP}
         >
           <div
@@ -414,7 +424,9 @@ export function LayoutEditor({
                   className={`absolute z-20 transition-colors hover:bg-pick ${position} ${
                     wallDrag?.side === side ? "bg-pick" : "bg-pick/30"
                   }`}
-                />
+                >
+                  <TouchPad zoom={zoom} pad={14} />
+                </div>
               ))}
 
               {/* Alignment guides */}
@@ -459,7 +471,7 @@ export function LayoutEditor({
                       type="button"
                       onPointerDown={(e) => startDeskDrag(e, desk, "desk")}
                       onClick={() => setSelectedId(desk.id)}
-                      className={`flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-sm border outline-none ${
+                      className={`relative flex h-full w-full flex-col items-center justify-center rounded-sm border outline-none ${
                         dragging ? "cursor-grabbing" : "cursor-grab"
                       } ${deskTone({
                         selected: isSelected,
@@ -468,6 +480,7 @@ export function LayoutEditor({
                         swapping,
                       })}`}
                     >
+                      <TouchPad zoom={zoom} />
                       {showLabels && (
                         <span
                           className={`code text-[9px] leading-none font-bold ${

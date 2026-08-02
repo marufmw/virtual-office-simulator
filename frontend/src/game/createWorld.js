@@ -18,6 +18,7 @@ function makeTiledTexture(path) {
   return texture;
 }
 
+const PORTRAIT_PULLBACK = 1.35; // how much wider a portrait screen sees
 const BRICK = 2; // world units per brick tile
 const TILE = 2; // world units per checker tile
 
@@ -181,6 +182,19 @@ export function createWorld(container) {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
       return raycaster.intersectObject(indicator.sprite).length > 0;
+    },
+
+    /**
+     * Where on the floor a point on the screen lands. The camera looks
+     * straight down an orthographic frustum at the z = 0 plane the whole
+     * world sits on, so this is the camera's own offset plus the fraction
+     * of the view the point sits at — no raycast needed.
+     */
+    screenToWorld(ndcX, ndcY) {
+      return {
+        x: camera.position.x + (ndcX * (camera.right - camera.left)) / 2,
+        y: camera.position.y + (ndcY * (camera.top - camera.bottom)) / 2,
+      };
     },
 
     // Position of a desk plus the standing spot in front of it
@@ -386,13 +400,23 @@ export function createWorld(container) {
     },
 
     resize() {
-      const aspect = window.innerWidth / window.innerHeight;
-      camera.left = -VIEW_SIZE * aspect;
-      camera.right = VIEW_SIZE * aspect;
-      camera.top = VIEW_SIZE;
-      camera.bottom = -VIEW_SIZE;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const aspect = width / height;
+      // A portrait screen sees a narrow strip of the room at the desk
+      // spacing the camera was tuned for, so it pulls back a little —
+      // enough to take in the neighbouring desks without shrinking anyone
+      // to a smudge.
+      const halfHeight = VIEW_SIZE * (aspect < 1 ? PORTRAIT_PULLBACK : 1);
+      camera.left = -halfHeight * aspect;
+      camera.right = halfHeight * aspect;
+      camera.top = halfHeight;
+      camera.bottom = -halfHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      // Phones report device pixel ratios of 3 and up; rendering every one
+      // of them costs far more than it shows, so cap it at 2
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(width, height);
     },
 
     dispose() {

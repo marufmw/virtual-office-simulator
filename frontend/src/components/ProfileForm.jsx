@@ -95,7 +95,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   return (
     <form onSubmit={handleSubmit} className="fixed inset-0 z-30 flex flex-col bg-ink text-paper">
       {/* Top bar, matching the layout editor's */}
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line/60 px-4 py-2.5">
+      <header className="safe-top flex shrink-0 flex-wrap items-center gap-3 border-b border-line/60 px-4 py-2.5">
         <h1 className="font-display text-base font-extrabold tracking-tight">{title}</h1>
         <p className="code hidden text-[11px] text-muted sm:block">
           {desks === null ? "reading floor plan" : `${desks.length} desks · ${taken} taken`}
@@ -106,7 +106,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             type="button"
             onClick={() => setEditing(true)}
             disabled={desks === null || failed}
-            className="flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-sm text-muted transition-colors hover:border-paper/40 hover:text-paper disabled:opacity-40"
+            className="flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-muted transition-colors hover:border-paper/40 hover:text-paper disabled:opacity-40 sm:py-1.5"
           >
             <LayoutGrid size={14} />
             Edit layout
@@ -115,7 +115,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-line px-3 py-1.5 text-sm text-muted transition-colors hover:border-paper/40 hover:text-paper"
+              className="rounded-md border border-line px-3 py-2 text-sm text-muted transition-colors hover:border-paper/40 hover:text-paper sm:py-1.5"
             >
               Cancel
             </button>
@@ -124,8 +124,10 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* The office */}
-        <div className="relative min-h-64 flex-1">
+        {/* The office. Stacked on a phone it takes a fixed share of the
+            screen rather than growing, so the badge below it always has
+            somewhere to go on a short display. */}
+        <div className="relative h-[38dvh] shrink-0 lg:h-auto lg:min-h-64 lg:flex-1">
           {desks === null ? (
             <Placeholder>
               <p className="code text-xs text-muted">reading floor plan…</p>
@@ -161,8 +163,8 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
         </div>
 
         {/* The badge you walk in with */}
-        <aside className="flex w-full shrink-0 flex-col gap-5 overflow-y-auto border-t border-line/60 p-5 lg:w-80 lg:border-l lg:border-t-0">
-          <div className="rounded-xl border border-line/70 bg-room p-4">
+        <aside className="safe-bottom flex min-h-0 w-full flex-1 flex-col gap-5 overflow-y-auto border-t border-line/60 p-5 lg:w-80 lg:flex-none lg:border-l lg:border-t-0">
+          <div className="shrink-0 rounded-xl border border-line/70 bg-room p-4">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-line" aria-hidden="true" />
             <div className="flex items-center gap-4">
               <div className="shrink-0 rounded-lg border border-line bg-ink/70 p-2">
@@ -181,7 +183,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             </div>
           </div>
 
-          <label className="flex flex-col gap-2">
+          <label className="flex shrink-0 flex-col gap-2">
             <span className="code text-[10px] uppercase text-muted">Name</span>
             <input
               className="rounded-md border border-line bg-room px-3 py-2 text-paper placeholder-muted/60 outline-none transition-colors focus:border-pick"
@@ -192,7 +194,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             />
           </label>
 
-          <div className="flex min-h-0 flex-col gap-2">
+          <div className="flex shrink-0 flex-col gap-2">
             <span className="code text-[10px] uppercase text-muted">Character</span>
             <div className="grid grid-cols-5 gap-1.5">
               {CHARACTER_NAMES.map((c) => (
@@ -217,7 +219,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
             </div>
           </div>
 
-          <div className="mt-auto flex flex-col gap-2 pt-2">
+          <div className="flex shrink-0 flex-col gap-2 pt-2 lg:mt-auto">
             <button
               type="submit"
               disabled={!canSubmit}

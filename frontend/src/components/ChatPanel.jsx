@@ -21,6 +21,7 @@ export function ChatPanel({
   onClose,
   disabled,
   disabledHint = "They walked away…",
+  isTouch,
 }) {
   const [draft, setDraft] = useState("");
   const endRef = useRef(null);
@@ -39,7 +40,10 @@ export function ChatPanel({
   }
 
   return (
-    <div className="absolute bottom-4 right-4 z-20 flex h-96 w-80 flex-col overflow-hidden rounded-lg border border-slate-600 bg-slate-800 shadow-2xl">
+    // A docked card once there's room for one; on a phone a sheet across
+    // the bottom, capped so the office stays visible above it. `dvh` keeps
+    // the composer above the on-screen keyboard rather than behind it.
+    <div className="safe-bottom absolute inset-x-0 bottom-0 z-30 flex h-[60dvh] max-h-[26rem] flex-col overflow-hidden rounded-t-2xl border border-slate-600 bg-slate-800 shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-96 sm:w-80 sm:rounded-lg">
       <header className="flex items-center justify-between border-b border-slate-700 bg-slate-900/60 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
@@ -53,9 +57,10 @@ export function ChatPanel({
         <button
           onClick={onClose}
           title="Close chat"
-          className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+          aria-label="Close chat"
+          className="-mr-1 rounded p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
         >
-          <X size={16} />
+          <X size={18} />
         </button>
       </header>
 
@@ -85,7 +90,9 @@ export function ChatPanel({
 
       <form onSubmit={submit} className="flex gap-2 border-t border-slate-700 p-2">
         <input
-          autoFocus
+          // Focusing on a phone throws the keyboard up over the office
+          // before anyone has decided to type
+          autoFocus={!isTouch}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={disabled ? disabledHint : "Type a message"}
@@ -97,9 +104,10 @@ export function ChatPanel({
           type="submit"
           disabled={disabled || draft.trim() === ""}
           title="Send"
-          className="rounded-md bg-sky-600 px-3 text-white transition-colors hover:bg-sky-500 disabled:opacity-40"
+          aria-label="Send"
+          className="flex min-w-11 items-center justify-center rounded-md bg-sky-600 px-3 text-white transition-colors hover:bg-sky-500 disabled:opacity-40"
         >
-          <Send size={16} />
+          <Send size={18} />
         </button>
       </form>
     </div>
