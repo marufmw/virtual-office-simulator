@@ -4,21 +4,21 @@ const TAP_SLOP = 12; // px of movement still counted as a tap, not a drag
 const TAP_TIME = 500; // ms beyond which it's a press, not a tap
 
 /**
- * Tapping a spot on the floor walks there, routed around the furniture by
- * the same pathfinder the "go to desk" menu uses.
+ * Tapping — or clicking — a spot on the floor walks there, routed around
+ * the furniture by the same pathfinder the "go to desk" menu uses. WASD
+ * still works and cancels the walk the moment it's pressed.
  *
- * Only for touch: with a keyboard, walking is WASD and a stray click
- * shouldn't send anyone across the room. A tap that lands on the chat
- * bubble is left alone — that one opens a conversation.
+ * A press that lands on the chat bubble is left alone: that one opens a
+ * conversation. So is anything but the left mouse button, since the right
+ * one belongs to the context menu.
  */
-export function useTapToWalk(world, enabled) {
+export function useTapToWalk(world) {
   useEffect(() => {
-    if (!enabled) return;
     const canvas = world.renderer.domElement;
     let start = null;
 
     const onPointerDown = (e) => {
-      if (e.pointerType === "mouse") return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       start = { x: e.clientX, y: e.clientY, at: performance.now() };
     };
 
@@ -50,5 +50,5 @@ export function useTapToWalk(world, enabled) {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
     };
-  }, [world, enabled]);
+  }, [world]);
 }

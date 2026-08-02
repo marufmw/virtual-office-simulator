@@ -6,15 +6,19 @@ import { WS_URL } from "../config";
  * world. Sends the join handshake (hello) once the socket opens.
  * `joinInfoRef` is read lazily so profile changes don't reconnect.
  * `chatRef` holds `{ onMessage, onHistory, onHuddle, onHuddleMessage }`
- * callbacks, also read lazily. Returns refs with `sendMove`, `sendProfile`,
- * `sendDm`, `sendHuddle` and `requestHistory`.
+ * callbacks, also read lazily. `onSeat` is called whenever the server
+ * reports who is driving this character. Returns refs with `sendMove`,
+ * `sendProfile`, `sendDm`, `sendHuddle`, `requestHistory` and `claimSeat`.
  */
-export function useOfficeSocket(world, joinInfoRef, chatRef) {
+export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat) {
   const sendMoveRef = useRef(() => {});
   const sendProfileRef = useRef(() => {});
   const sendDmRef = useRef(() => {});
   const sendHuddleRef = useRef(() => {});
   const requestHistoryRef = useRef(() => {});
+  const claimSeatRef = useRef(() => {});
+  const onSeatRef = useRef(onSeat);
+  onSeatRef.current = onSeat;
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
@@ -54,6 +58,12 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
     sendHuddleRef.current = (text) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "huddle_msg", text }));
+      }
+    };
+
+    claimSeatRef.current = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "claim_seat" }));
       }
     };
 
@@ -149,6 +159,10 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
             createdAt: m.createdAt,
           }))
         );
+      } else if (msg.type === "seat") {
+        // Either "you are driving this character, and N others are asking"
+        // or "somebody else has it". The overlay is the UI for both.
+        onSeatRef.current?.(msg);
       } else if (msg.type === "leave") {
         world.removePlayer(msg.id);
       }
@@ -160,9 +174,17 @@ export function useOfficeSocket(world, joinInfoRef, chatRef) {
       sendDmRef.current = () => {};
       sendHuddleRef.current = () => {};
       requestHistoryRef.current = () => {};
+      claimSeatRef.current = () => {};
       ws.close();
     };
   }, [world, joinInfoRef, chatRef]);
 
-  return { sendMoveRef, sendProfileRef, sendDmRef, sendHuddleRef, requestHistoryRef };
+  return {
+    sendMoveRef,
+    sendProfileRef,
+    sendDmRef,
+    sendHuddleRef,
+    requestHistoryRef,
+    claimSeatRef,
+  };
 }

@@ -95,7 +95,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
   return (
     <form onSubmit={handleSubmit} className="fixed inset-0 z-30 flex flex-col bg-ink text-paper">
       {/* Top bar, matching the layout editor's */}
-      <header className="safe-top flex shrink-0 flex-wrap items-center gap-3 border-b border-line/60 px-4 py-2.5">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line/60 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)]">
         <h1 className="font-display text-base font-extrabold tracking-tight">{title}</h1>
         <p className="code hidden text-[11px] text-muted sm:block">
           {desks === null ? "reading floor plan" : `${desks.length} desks · ${taken} taken`}
@@ -163,7 +163,7 @@ export function ProfileForm({ title, initial, submitLabel, onSubmit, onClose }) 
         </div>
 
         {/* The badge you walk in with */}
-        <aside className="safe-bottom flex min-h-0 w-full flex-1 flex-col gap-5 overflow-y-auto border-t border-line/60 p-5 lg:w-80 lg:flex-none lg:border-l lg:border-t-0">
+        <aside className="flex min-h-0 w-full flex-1 flex-col gap-5 overflow-y-auto border-t border-line/60 px-5 pt-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] lg:w-80 lg:flex-none lg:border-l lg:border-t-0">
           <div className="shrink-0 rounded-xl border border-line/70 bg-room p-4">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-line" aria-hidden="true" />
             <div className="flex items-center gap-4">

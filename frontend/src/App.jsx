@@ -11,6 +11,8 @@ import { SettingsButton } from "./components/SettingsButton";
 import { ContextMenu } from "./components/ContextMenu";
 import { ChatPanel } from "./components/ChatPanel";
 import { TouchControls } from "./components/TouchControls";
+import { SeatClaim, SeatContested } from "./components/SeatClaim";
+import { ProfileForm } from "./components/ProfileForm";
 
 function Office({ world, joinInfo, onProfileChange }) {
   const keysRef = useKeyboard();
@@ -24,6 +26,10 @@ function Office({ world, joinInfo, onProfileChange }) {
   // The proximity group I'm currently standing in, if any: { id, members, messages }
   const [huddle, setHuddle] = useState(null);
   const [huddleOpen, setHuddleOpen] = useState(false);
+  // Who is driving this character: null until the server says otherwise,
+  // then { deskId, active, holder, waiting }
+  const [seat, setSeat] = useState(null);
+  const [pickingDesk, setPickingDesk] = useState(false);
 
   const appendMessage = useCallback((peerId, message) => {
     setConversations((prev) => ({ ...prev, [peerId]: [...(prev[peerId] ?? []), message] }));
@@ -63,10 +69,16 @@ function Office({ world, joinInfo, onProfileChange }) {
     onHuddleMessage,
   };
 
-  const { sendMoveRef, sendProfileRef, sendDmRef, sendHuddleRef, requestHistoryRef } =
-    useOfficeSocket(world, joinInfoRef, chatRef);
+  const {
+    sendMoveRef,
+    sendProfileRef,
+    sendDmRef,
+    sendHuddleRef,
+    requestHistoryRef,
+    claimSeatRef,
+  } = useOfficeSocket(world, joinInfoRef, chatRef, setSeat);
   useGameLoop(world, keysRef, sendMoveRef, stickRef);
-  useTapToWalk(world, isTouch);
+  useTapToWalk(world);
 
   // Interacting opens the huddle when I'm standing in a group, since that's
   // the conversation everyone around me is already having
@@ -88,8 +100,33 @@ function Office({ world, joinInfo, onProfileChange }) {
 
   const chatIsOpen = huddleOpen || chatPeerId !== null;
 
+  // Somebody else has this character. Nothing in the office is usable from
+  // here, so the claim screen takes over the whole surface.
+  if (seat && !seat.active) {
+    if (pickingDesk) {
+      return (
+        <ProfileForm
+          title="Take a desk"
+          initial={{}}
+          submitLabel="Walk in"
+          onSubmit={onProfileChange}
+          onClose={() => setPickingDesk(false)}
+        />
+      );
+    }
+    return (
+      <SeatClaim
+        deskId={seat.deskId}
+        holder={seat.holder}
+        onClaim={() => claimSeatRef.current()}
+        onPickAnother={() => setPickingDesk(true)}
+      />
+    );
+  }
+
   return (
     <>
+      {seat?.active && seat.waiting > 0 && <SeatContested waiting={seat.waiting} />}
       <SettingsButton
         joinInfo={joinInfo}
         onSave={(profile) => {

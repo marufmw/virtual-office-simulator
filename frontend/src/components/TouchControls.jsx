@@ -80,32 +80,41 @@ function Stick({ stickRef }) {
  */
 export function TouchControls({ stickRef, canInteract, interactLabel, onInteract, onGoToDesk }) {
   return (
-    <div className="safe-bottom pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between px-5 pb-5">
-      <div className="pointer-events-auto">
-        <Stick stickRef={stickRef} />
-      </div>
+    <>
+      {/* Going back to your desk is a settled, deliberate thing rather than
+          a thumb action, so it sits with the settings cog up top */}
+      <button
+        type="button"
+        onClick={onGoToDesk}
+        title="Go to my desk"
+        aria-label="Go to my desk"
+        style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
+        className="absolute right-[4.5rem] z-10 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/80 text-slate-300 shadow-lg transition-colors active:bg-slate-700 active:text-white sm:right-20"
+      >
+        <Armchair size={20} />
+      </button>
 
-      <div className="pointer-events-auto flex flex-col items-end gap-3">
-        <button
-          type="button"
-          onClick={onGoToDesk}
-          title="Go to my desk"
-          aria-label="Go to my desk"
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-line/70 bg-ink/70 text-muted shadow-lg backdrop-blur-sm active:bg-plate"
-        >
-          <Armchair size={20} />
-        </button>
-        <button
-          type="button"
-          onClick={onInteract}
-          disabled={!canInteract}
-          title={interactLabel}
-          aria-label={interactLabel}
-          className="flex h-16 w-16 items-center justify-center rounded-full border border-pick/60 bg-pick/90 text-ink shadow-xl transition-opacity active:bg-pick disabled:pointer-events-none disabled:opacity-0"
-        >
-          <MessageCircle size={26} />
-        </button>
+      {/* Lifted clear of the bottom edge — a stick sitting right on it
+          fights the home indicator and the browser's own swipe gestures */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between px-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+        {/* Walking is the right thumb's job; chat sits under the left */}
+        <div className="pointer-events-auto flex flex-col items-start gap-3">
+          <button
+            type="button"
+            onClick={onInteract}
+            disabled={!canInteract}
+            title={interactLabel}
+            aria-label={interactLabel}
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-pick/60 bg-pick/90 text-ink shadow-xl transition-opacity active:bg-pick disabled:pointer-events-none disabled:opacity-0"
+          >
+            <MessageCircle size={26} />
+          </button>
+        </div>
+
+        <div className="pointer-events-auto">
+          <Stick stickRef={stickRef} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

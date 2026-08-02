@@ -43,7 +43,7 @@ export function ChatPanel({
     // A docked card once there's room for one; on a phone a sheet across
     // the bottom, capped so the office stays visible above it. `dvh` keeps
     // the composer above the on-screen keyboard rather than behind it.
-    <div className="safe-bottom absolute inset-x-0 bottom-0 z-30 flex h-[60dvh] max-h-[26rem] flex-col overflow-hidden rounded-t-2xl border border-slate-600 bg-slate-800 shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-96 sm:w-80 sm:rounded-lg">
+    <div className="absolute inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom,0px)] sm:pb-0 flex h-[60dvh] max-h-[26rem] flex-col overflow-hidden rounded-t-2xl border border-slate-600 bg-slate-800 shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:h-96 sm:w-80 sm:rounded-lg">
       <header className="flex items-center justify-between border-b border-slate-700 bg-slate-900/60 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span

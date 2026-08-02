@@ -301,6 +301,53 @@ function onlinePlayerAtDesk(deskId) {
   return null;
 }
 
+// --- One client per character ---------------------------------------------
+//
+// A character is driven from one place at a time. A second client asking for
+// a seat that's in use doesn't join: it waits here, everyone attached to
+// that character is told, and whichever of them claims it takes over.
+
+const contenders = new Map(); // deskId -> Map(sessionId -> { ws, demote })
+
+function addContender(deskId, sessionId, entry) {
+  if (!contenders.has(deskId)) contenders.set(deskId, new Map());
+  contenders.get(deskId).set(sessionId, entry);
+}
+
+function dropContender(deskId, sessionId) {
+  const waiting = contenders.get(deskId);
+  if (!waiting) return;
+  waiting.delete(sessionId);
+  if (waiting.size === 0) contenders.delete(deskId);
+}
+
+const sendTo = (ws, payload) => {
+  if (ws.readyState === 1) ws.send(JSON.stringify(payload));
+};
+
+/**
+ * Tells everyone attached to a character where they stand: the one client
+ * driving it that others are asking, and the ones waiting who currently
+ * holds it. Sent whenever that set changes.
+ */
+function announceSeat(deskId) {
+  const holder = onlinePlayerAtDesk(deskId);
+  const waiting = contenders.get(deskId)?.size ?? 0;
+
+  if (holder) {
+    sendTo(holder.player.ws, { type: "seat", deskId, active: true, waiting });
+  }
+  for (const entry of contenders.get(deskId)?.values() ?? []) {
+    sendTo(entry.ws, {
+      type: "seat",
+      deskId,
+      active: false,
+      holder: holder ? holder.player.name : null,
+      waiting,
+    });
+  }
+}
+
 const publicPlayer = (pid, p) => ({
   id: pid,
   deskId: p.deskId,
@@ -355,6 +402,88 @@ wss.on("connection", (ws) => {
   const id = nextId++;
   let player = null;
   let joining = false;
+  let waitingFor = null; // the desk this connection is queued for, if any
+
+  /**
+   * Hands the character over to another client. This connection keeps its
+   * socket and joins the queue for the same seat, so it can take it back.
+   */
+  function demote() {
+    if (!player) return;
+    const deskId = player.deskId;
+    db.savePosition(deskId, player.x, player.y).catch((error) =>
+      console.error(`Could not save ${player.name}'s position on handover:`, error)
+    );
+    players.delete(id);
+    player = null;
+    worldMoved = true;
+    broadcast({ type: "leave", id });
+
+    waitingFor = deskId;
+    addContender(deskId, id, { ws, demote });
+    console.log(`Seat ${deskId} handed over (${players.size} online)`);
+  }
+
+  /**
+   * Walks in as whoever sits at `deskId`. The seat must already be free of
+   * a live session — the callers see to that.
+   */
+  async function enterOffice(deskId) {
+    const record = await db.getPlayer(deskId);
+    if (!record) {
+      sendTo(ws, { type: "error", reason: "invalid_desk" });
+      return;
+    }
+
+    // Read the floor plan before joining the room. A socket in `players`
+    // receives broadcasts, and while this waits on the database somebody
+    // else may well move — init has to be the first thing this client
+    // sees, or it is told about a move it has no world to apply it to.
+    // Two independent reads, fetched together to cost one round trip.
+    const [room, desks] = await Promise.all([db.getRoom(), db.loadDesks()]);
+
+    player = {
+      ws,
+      demote,
+      deskId: record.desk_id,
+      name: record.name,
+      x: record.x,
+      y: record.y,
+      color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
+      character: record.character,
+    };
+    players.set(id, player);
+    console.log(`Player ${player.name} (${player.deskId}) joined (${players.size} online)`);
+
+    sendTo(ws, {
+      type: "init",
+      id,
+      room,
+      desks,
+      players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
+    });
+    broadcast({ type: "join", player: publicPlayer(id, player) }, id);
+    worldMoved = true;
+  }
+
+  /**
+   * Takes the character over: whoever is driving it is set aside, and this
+   * connection walks in as them.
+   */
+  async function claimSeat() {
+    if (!waitingFor || joining) return;
+    joining = true;
+    const deskId = waitingFor;
+
+    const holder = onlinePlayerAtDesk(deskId);
+    if (holder) holder.player.demote();
+
+    dropContender(deskId, id);
+    waitingFor = null;
+    await enterOffice(deskId);
+    joining = false;
+    announceSeat(deskId);
+  }
 
   // The store is over the network now, so handling a message is async. A
   // rejection here would otherwise be unhandled and take the process down.
@@ -371,6 +500,10 @@ wss.on("connection", (ws) => {
     }
 
     if (!player) {
+      // Before joining, the only other thing a connection can say is that
+      // it wants the seat it was told is busy
+      if (msg.type === "claim_seat") return claimSeat();
+
       // First message must be the join handshake
       if (msg.type !== "hello" || typeof msg.deskId !== "string" || !msg.deskId) return;
       // The handshake now waits on the database, so a second hello arriving
@@ -386,11 +519,9 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      const existing = await db.getPlayer(msg.deskId);
-      let record;
-      if (existing) {
-        record = existing;
-      } else {
+      // An unclaimed desk gets its player record now, so that whichever
+      // client ends up driving the character finds someone to be
+      if (!(await db.getPlayer(msg.deskId))) {
         if (typeof msg.name !== "string" || !msg.name) {
           joining = false;
           return; // new desks need a name
@@ -399,45 +530,19 @@ wss.on("connection", (ws) => {
           ? msg.character
           : CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
         // New players start beside their designated desk
-        record = await db.createPlayer(
-          msg.deskId,
-          msg.name,
-          character,
-          desk.x,
-          desk.y + SPAWN_OFFSET_Y
-        );
+        await db.createPlayer(msg.deskId, msg.name, character, desk.x, desk.y + SPAWN_OFFSET_Y);
       }
 
-      // Read the floor plan before joining the room. A socket in `players`
-      // receives broadcasts, and while this waits on the database somebody
-      // else may well move — init has to be the first thing this client
-      // sees, or it is told about a move it has no world to apply it to.
-      // Two independent reads, fetched together to cost one round trip.
-      const [room, desks] = await Promise.all([db.getRoom(), db.loadDesks()]);
+      // Only one client drives a character, and the newest one always wins:
+      // opening the office on your phone shouldn't leave you staring at a
+      // locked door because a tab is still open on your laptop. Whoever had
+      // it is set aside, told where it went, and can take it straight back.
+      const holder = onlinePlayerAtDesk(msg.deskId);
+      if (holder) holder.player.demote();
 
-      player = {
-        ws,
-        deskId: record.desk_id,
-        name: record.name,
-        x: record.x,
-        y: record.y,
-        color: PLAYER_COLORS[(id - 1) % PLAYER_COLORS.length],
-        character: record.character,
-      };
-      players.set(id, player);
-      console.log(`Player ${player.name} (${player.deskId}) joined (${players.size} online)`);
-
-      ws.send(
-        JSON.stringify({
-          type: "init",
-          id,
-          room,
-          desks,
-          players: [...players].map(([pid, p]) => publicPlayer(pid, p)),
-        })
-      );
-      broadcast({ type: "join", player: publicPlayer(id, player) }, id);
-      worldMoved = true;
+      await enterOffice(msg.deskId);
+      joining = false;
+      announceSeat(msg.deskId);
       return;
     }
 
@@ -530,14 +635,27 @@ wss.on("connection", (ws) => {
   }
 
   ws.on("close", () => {
+    // A connection that was only queued for a seat gives up its place, and
+    // the rest are told the queue got shorter
+    if (waitingFor) {
+      const deskId = waitingFor;
+      waitingFor = null;
+      dropContender(deskId, id);
+      announceSeat(deskId);
+      return;
+    }
+
     if (!player) return;
+    const deskId = player.deskId;
     players.delete(id);
     worldMoved = true;
-    db.savePosition(player.deskId, player.x, player.y).catch((error) =>
+    db.savePosition(deskId, player.x, player.y).catch((error) =>
       console.error(`Could not save ${player.name}'s last position:`, error)
     );
     broadcast({ type: "leave", id });
-    console.log(`Player ${player.name} (${player.deskId}) left (${players.size} online)`);
+    console.log(`Player ${player.name} (${deskId}) left (${players.size} online)`);
+    // The character is free now; anyone waiting on it can walk in
+    announceSeat(deskId);
   });
 });
 

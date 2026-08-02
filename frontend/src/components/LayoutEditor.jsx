@@ -275,7 +275,7 @@ export function LayoutEditor({
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-ink text-paper">
       {/* Toolbar */}
-      <header className="safe-top flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/60 px-4 py-2.5">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/60 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)]">
         <h1 className="font-display text-base font-extrabold tracking-tight">Office layout</h1>
 
         <div className="flex items-center gap-1 rounded-md border border-line p-0.5">

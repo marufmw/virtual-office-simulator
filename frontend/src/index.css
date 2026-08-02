@@ -65,19 +65,16 @@ select {
   }
 }
 
-/* Room for the notch and the home indicator */
-@supports (padding: env(safe-area-inset-top)) {
-  .safe-top {
-    padding-top: env(safe-area-inset-top);
-  }
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .safe-inset {
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-      env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-}
+/*
+ * Room for the notch and the home indicator is asked for at each call site
+ * with `env(safe-area-inset-*)` inside an arbitrary Tailwind value, e.g.
+ * `pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]`.
+ *
+ * There is deliberately no `.safe-bottom` helper: a plain class setting
+ * `padding-bottom` sits at the same specificity as `pb-20` and, defined
+ * after the utilities, quietly wins — which pinned the thumb controls to
+ * the bottom edge no matter what padding they were given.
+ */
 
 /* Anything the finger drags rather than scrolls */
 .grab-surface {
