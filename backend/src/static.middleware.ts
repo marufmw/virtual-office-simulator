@@ -59,10 +59,20 @@ export function staticFallback(
   const file = exists(requested) ? requested : exists(index) ? index : null;
   if (!file) return next();
 
+  console.log("[static]", {
+    urlPath,
+    PUBLIC_DIR,
+    requested,
+    file,
+    exists: exists(requested),
+    extension: path.extname(file),
+    contentType: TYPES[path.extname(file)],
+  });
+  
   res.writeHead(200, {
     "Content-Type": TYPES[path.extname(file)] ?? "application/octet-stream",
     // Vite fingerprints its assets; index.html must never be held onto
-    "Cache-Control": file === index ? "no-cache" : "public, max-age=31536000, immutable",
+    "Cache-Control": file === index ? "no-cache" : "no-cache",
   });
   if (req.method === "HEAD") {
     res.end();
