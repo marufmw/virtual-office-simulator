@@ -20,6 +20,7 @@ const TYPES: Record<string, string> = {
   ".gltf": "model/gltf+json",
   ".woff2": "font/woff2",
   ".ico": "image/x-icon",
+  ".mp3": "audio/mpeg",
 };
 
 const exists = (file: string) => {
