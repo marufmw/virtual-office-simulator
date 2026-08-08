@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import * as THREE from "three";
+import { createStepTracker } from "../audio/steps";
 import {
   SPEED,
   SEND_INTERVAL,
@@ -20,6 +21,7 @@ import {
 export function useGameLoop(world, keysRef, sendMoveRef, stickRef) {
   useEffect(() => {
     const clock = new THREE.Clock();
+    const steps = createStepTracker();
     let sendTimer = 0;
     let positionDirty = false;
     let stuckTimer = 0; // how long an auto-walk has made no progress
@@ -168,6 +170,8 @@ export function useGameLoop(world, keysRef, sendMoveRef, stickRef) {
       updateCamera(delta);
       world.updateAnimations(delta);
       world.updateProximity(delta);
+      // Footsteps follow the positions everyone has just been moved to
+      steps.update(world);
       world.renderer.render(world.scene, world.camera);
     }
 

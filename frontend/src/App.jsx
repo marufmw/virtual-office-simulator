@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createWorld } from "./game/createWorld";
 import { useSession } from "./hooks/useSession";
+import { useAudioUnlock, useClickSounds } from "./hooks/useAudio";
 import { SignIn } from "./components/SignIn";
 import { OfficePicker } from "./components/OfficePicker";
 import { OfficeAdmin } from "./components/OfficeAdmin";
@@ -15,6 +16,11 @@ function App() {
   const mountRef = useRef(null);
   const [world, setWorld] = useState(null);
   const { status, user, config, signIn, signOut } = useSession();
+
+  // Sound is allowed from the first click anywhere, and every control makes
+  // one — including on the way in, before there is an office to be in
+  useAudioUnlock();
+  useClickSounds();
 
   // The office being entered, and whether we're editing it rather than
   // standing in it. Where Done goes depends on where Manage was opened

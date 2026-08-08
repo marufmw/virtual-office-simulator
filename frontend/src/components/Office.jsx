@@ -15,6 +15,10 @@ import { Whiteboard } from "./Whiteboard";
 import { BoardPrompt } from "./BoardPrompt";
 import { SeatClaim, SeatContested } from "./SeatClaim";
 import { CharacterPicker } from "./CharacterPicker";
+import { SoundButton } from "./SoundButton";
+import { duckMusic } from "../audio/audioBus";
+import { startMusic, stopMusic } from "../audio/music";
+import { sfx } from "../audio/sfx";
 
 /** Why we were shown the door, in words for the person it happened to. */
 const REFUSALS = {
@@ -179,6 +183,30 @@ export function Office({ world, office, user, onManage, onLeave }) {
     };
   }, [world, mapOpen, boardOpen]);
 
+  // The office has a backing track while you're standing in it, and not a
+  // moment longer — the picker and the editor stay quiet
+  useEffect(() => {
+    startMusic();
+    return stopMusic;
+  }, []);
+
+  // Nobody wants a soundtrack while they're drawing, but cutting it dead is
+  // worse than turning it down
+  useEffect(() => {
+    duckMusic(boardOpen);
+    return () => duckMusic(false);
+  }, [boardOpen]);
+
+  // Someone walked close enough to talk to
+  useEffect(() => {
+    if (nearbyId !== null) sfx.nearby();
+  }, [nearbyId]);
+
+  // Panels opening and closing, so the UI answers back
+  useEffect(() => {
+    if (mapOpen || boardOpen || dressing) sfx.open();
+  }, [mapOpen, boardOpen, dressing]);
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.key.toLowerCase() !== "m") return;
@@ -216,6 +244,7 @@ export function Office({ world, office, user, onManage, onLeave }) {
         onGoToDesk={goToDesk}
         showGoToDesk={isTouch}
       >
+        <SoundButton />
         <TopButton onClick={() => setDressing(true)} label="Change character">
           <Shirt size={20} />
         </TopButton>

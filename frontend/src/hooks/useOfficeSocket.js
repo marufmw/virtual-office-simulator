@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { WS_URL } from "../config";
 import { getToken } from "../api/client";
+import { sfx } from "../audio/sfx";
 
 /**
  * The connection to one office, and everything that arrives over it applied
@@ -70,6 +71,7 @@ export function useOfficeSocket(world, officeId, { chatRef, boardRef, onSeat, on
       } else if (msg.type === "join") {
         const p = msg.player;
         world.addPlayer(p.id, p.x, p.y, p.character, p.name);
+        sfx.arrive();
       } else if (msg.type === "update") {
         // Somebody changed their character — rebuild their visuals
         world.updatePlayer(msg.player.id, msg.player);
@@ -81,13 +83,16 @@ export function useOfficeSocket(world, officeId, { chatRef, boardRef, onSeat, on
         world.movePlayer(world.myId, msg.x, msg.y);
       } else if (msg.type === "leave") {
         world.removePlayer(msg.id);
+        sfx.depart();
       } else if (msg.type === "error" || msg.type === "evicted") {
+        sfx.refused();
         // No session, no membership, or no desk any more. Nothing here is
         // recoverable from inside the room, so it goes back to the picker.
         onRefusedRef.current?.(msg.reason);
       } else if (msg.type === "dm") {
         // Both the sender's echo and the recipient's copy land here
         const peerId = msg.from === world.myId ? msg.to : msg.from;
+        if (msg.from !== world.myId) sfx.message();
         chatRef.current?.onMessage?.(peerId, {
           mine: msg.from === world.myId,
           body: msg.body,
@@ -119,6 +124,7 @@ export function useOfficeSocket(world, officeId, { chatRef, boardRef, onSeat, on
               }
         );
       } else if (msg.type === "huddle_msg") {
+        if (msg.fromId !== world.myId) sfx.message();
         chatRef.current?.onHuddleMessage?.(msg.huddleId, {
           mine: msg.fromId === world.myId,
           from: msg.fromName,
