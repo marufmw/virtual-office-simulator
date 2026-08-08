@@ -22,13 +22,14 @@ async function bootstrap(): Promise<void> {
   });
   app.enableShutdownHooks();
 
+  // The built frontend, in front of the router: Nest finishes its own stack
+  // with a catch-all 404, so a page served after it would never be reached.
+  // The middleware passes anything the server owns straight through.
+  app.use(staticFallback);
+
   // The tables have to exist and the office has to be seeded before the
   // first person knocks, so nothing is served until init has finished
   await app.init();
-
-  // Mounted after the router, so the built frontend only answers what no
-  // controller did — a deep link lands on index.html rather than a 404
-  app.use(staticFallback);
 
   // The room shares the HTTP server: page, API and WebSocket, one port
   await app.get(RealtimeGateway).attach(app.getHttpServer() as Server);

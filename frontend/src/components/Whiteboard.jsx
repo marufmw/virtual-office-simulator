@@ -46,13 +46,6 @@ export function Whiteboard({ initialElements, members, handlersRef, onBroadcast,
   const trailingTimer = useRef(null);
   const pointerTimer = useRef(0);
 
-  // What was already on the board is not ours to announce
-  useEffect(() => {
-    for (const element of initialElements ?? []) {
-      if (element?.id) sentRef.current.set(element.id, element.version ?? 0);
-    }
-  }, [initialElements]);
-
   /**
    * Folds someone else's strokes into the canvas without disturbing ours.
    * The current scene is read from Excalidraw at this moment rather than
@@ -76,6 +69,21 @@ export function Whiteboard({ initialElements, members, handlersRef, onBroadcast,
     },
     [api]
   );
+
+  /**
+   * The scene the server hands us: on mount it is Excalidraw's initial
+   * data, and again whenever a fresh copy arrives — the answer to the sync
+   * asked for on opening the board, which lands after the canvas is up.
+   * Merged like any other remote edit, so it can't undo a stroke in flight.
+   *
+   * Either way it is not ours to announce, so what came in counts as sent.
+   */
+  useEffect(() => {
+    for (const element of initialElements ?? []) {
+      if (element?.id) sentRef.current.set(element.id, element.version ?? 0);
+    }
+    applyRemote(initialElements);
+  }, [initialElements, applyRemote]);
 
   /** Moves someone else's cursor. Excalidraw draws these itself. */
   const applyPointer = useCallback(

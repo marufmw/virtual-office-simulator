@@ -487,6 +487,21 @@ export class RealtimeGateway implements OnApplicationShutdown {
       return;
     }
 
+    // Opening the board asks for the scene as it stands. The greeting sent
+    // on walking up is a moment old by the time anyone draws on it, and a
+    // client that closed the board and came back has been holding that
+    // moment ever since — so the board is re-read rather than remembered.
+    if (msg.type === "board_sync") {
+      if (!this.board.members.has(id)) return;
+      this.sendTo(player.ws, {
+        type: "board",
+        near: true,
+        members: this.boardMembers(),
+        elements: this.board.snapshot(),
+      });
+      return;
+    }
+
     // Where someone's pen is. Not stored and not merged — a cursor is only
     // interesting while it's moving.
     if (msg.type === "board_pointer") {

@@ -30,12 +30,16 @@ const exists = (file: string) => {
   }
 };
 
+// What the server answers itself. Nest ends its router with a catch-all
+// 404, so this middleware has to sit in front of it — which means naming
+// the paths that are never the frontend's to serve.
+const SERVER_PATHS = ["/api/", "/healthz"];
+
 /**
  * Serves a file from the build, falling back to index.html so a deep link
- * still lands in the app.
- *
- * Mounted after Nest's router, so it only ever sees what no controller
- * answered; anything it can't serve either is left to Nest's own 404.
+ * still lands in the app. Anything it can't serve is passed along to Nest,
+ * which is the whole of it in development: Vite serves those files itself
+ * and PUBLIC_DIR won't exist.
  */
 export function staticFallback(
   req: IncomingMessage,
@@ -43,9 +47,8 @@ export function staticFallback(
   next: (error?: unknown) => void
 ): void {
   const urlPath = new URL(req.url ?? "/", "http://localhost").pathname;
-  if ((req.method !== "GET" && req.method !== "HEAD") || urlPath.startsWith("/api/")) {
-    return next();
-  }
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (SERVER_PATHS.some((prefix) => urlPath.startsWith(prefix))) return next();
 
   // Anything that climbs out of the build directory is not ours to serve
   const requested = path.join(PUBLIC_DIR, path.normalize(decodeURIComponent(urlPath)));

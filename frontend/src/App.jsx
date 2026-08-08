@@ -106,12 +106,23 @@ function Office({ world, joinInfo, onProfileChange }) {
     claimSeatRef,
     sendBoardRef,
     sendPointerRef,
+    requestBoardRef,
   } = useOfficeSocket(world, joinInfoRef, chatRef, setSeat, boardRef);
   useGameLoop(world, keysRef, sendMoveRef, stickRef);
+
+  // Opening the board pulls the scene fresh. What we were handed on walking
+  // up has been sitting in state ever since — through everything drawn on it
+  // since, our own strokes included — so reopening it would otherwise put
+  // the board back as it was when we arrived.
+  const openBoard = useCallback(() => {
+    requestBoardRef.current();
+    setBoardOpen(true);
+  }, [requestBoardRef]);
+
   const atBoardRef = useRef(false);
   useTapToWalk(world, () => {
     if (!atBoardRef.current) return false; // too far: walk over instead
-    setBoardOpen(true);
+    openBoard();
     return true;
   });
 
@@ -221,7 +232,7 @@ function Office({ world, joinInfo, onProfileChange }) {
       {/* Standing at the board but not drawing on it yet. The prompt rides
           on the board itself; the board is clickable too. */}
       {atBoard && !boardOpen && !chatIsOpen && (
-        <BoardPrompt world={world} count={board.members.length} onOpen={() => setBoardOpen(true)} />
+        <BoardPrompt world={world} count={board.members.length} onOpen={openBoard} />
       )}
       {/* A long press would fire this at an arbitrary spot; on touch the
           same action is a button in the thumb cluster instead */}

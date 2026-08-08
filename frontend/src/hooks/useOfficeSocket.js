@@ -19,6 +19,7 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
   const claimSeatRef = useRef(() => {});
   const sendBoardRef = useRef(() => {});
   const sendPointerRef = useRef(() => {});
+  const requestBoardRef = useRef(() => {});
   const onSeatRef = useRef(onSeat);
   onSeatRef.current = onSeat;
 
@@ -66,6 +67,14 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
     sendBoardRef.current = (elements) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "board_update", elements }));
+      }
+    };
+
+    // Asks for the board as it stands. The scene we were greeted with on
+    // walking up is only good for that moment.
+    requestBoardRef.current = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "board_sync" }));
       }
     };
 
@@ -199,6 +208,7 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
       claimSeatRef.current = () => {};
       sendBoardRef.current = () => {};
       sendPointerRef.current = () => {};
+      requestBoardRef.current = () => {};
       ws.close();
     };
   }, [world, joinInfoRef, chatRef, boardRef]);
@@ -212,5 +222,6 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
     claimSeatRef,
     sendBoardRef,
     sendPointerRef,
+    requestBoardRef,
   };
 }
