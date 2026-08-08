@@ -1,13 +1,14 @@
 import { Module } from "@nestjs/common";
 
-import { OfficeModule } from "../office/office.module";
+import { OfficesModule } from "../offices/offices.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { HealthController } from "./health.controller";
-import { OfficeController } from "./office.controller";
+import { LayoutController } from "./layout.controller";
+import { OfficesController, SessionController } from "./offices.controller";
 
-/** The HTTP side: the floor plan, and a health check. */
+/** The HTTP side: offices, their member lists, their floor plans. */
 @Module({
-  imports: [OfficeModule, RealtimeModule],
-  controllers: [OfficeController, HealthController],
+  imports: [OfficesModule, RealtimeModule],
+  controllers: [OfficesController, SessionController, LayoutController, HealthController],
 })
 export class ApiModule {}

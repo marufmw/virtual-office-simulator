@@ -427,8 +427,11 @@ export function createWorld(container) {
       return false;
     },
 
-    addDesk(id, x, y) {
-      const desk = createDesk(id, x, y);
+    // Desks are keyed by their id, but labelled with the code written on
+    // them — the two have been different since offices grew owners
+    addDesk(id, x, y, code) {
+      const desk = createDesk(code ?? id, x, y);
+      desk.code = code ?? id;
       scene.add(desk.group);
       desks.set(id, desk);
     },
@@ -466,6 +469,7 @@ export function createWorld(container) {
     deskList() {
       return [...desks].map(([id, desk]) => ({
         id,
+        code: desk.code ?? id,
         x: desk.group.position.x,
         y: desk.group.position.y,
       }));
@@ -495,6 +499,8 @@ export function createWorld(container) {
 
       player.group = group;
       player.name = name;
+      // Kept so the character picker can show which one is already yours
+      player.character = character;
       player.prevX = x;
       player.prevY = y;
       scene.add(group);

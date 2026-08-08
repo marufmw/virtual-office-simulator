@@ -5,8 +5,9 @@ import { ConfigModule } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 
 import { ApiModule } from "./api/api.module";
+import { AuthModule } from "./auth/auth.module";
 import { buildDataSourceOptions } from "./database/data-source";
-import { OfficeModule } from "./office/office.module";
+import { OfficesModule } from "./offices/offices.module";
 import { RealtimeModule } from "./realtime/realtime.module";
 
 @Module({
@@ -19,7 +20,8 @@ import { RealtimeModule } from "./realtime/realtime.module";
     // Read lazily: the config module has to have loaded .env by the time
     // the connection string is looked up
     TypeOrmModule.forRootAsync({ useFactory: buildDataSourceOptions }),
-    OfficeModule,
+    AuthModule,
+    OfficesModule,
     RealtimeModule,
     ApiModule,
   ],

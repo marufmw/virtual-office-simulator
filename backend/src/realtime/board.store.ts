@@ -5,7 +5,7 @@
 // Unlike a huddle, what's drawn outlives the people drawing it, so the
 // scene is kept here and written to the database.
 
-import { Room } from "../office/layout";
+import { Room } from "../offices/layout";
 
 export const BOARD_RANGE = 4.5; // how close you stand to take part
 export const BOARD_INSET = 2; // how far in front of the wall the board's spot sits

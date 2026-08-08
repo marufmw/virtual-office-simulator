@@ -167,9 +167,9 @@ export function OfficeMap({ world, onWalkTo, onClose }) {
                     type="button"
                     data-target=""
                     onClick={() => walk(desk.x, desk.y - STAND_OFFSET)}
-                    onPointerEnter={() => setHovered(`desk:${desk.id}`)}
+                    onPointerEnter={() => setHovered(`desk:${desk.code}`)}
                     onPointerLeave={() => setHovered(null)}
-                    aria-label={`Walk to desk ${desk.id}`}
+                    aria-label={`Walk to desk ${desk.code}`}
                     className={`absolute flex items-center justify-center rounded-[3px] border transition-colors ${
                       seated
                         ? "border-lit/60 bg-lit/20 hover:bg-lit/35"
@@ -187,7 +187,7 @@ export function OfficeMap({ world, onWalkTo, onClose }) {
                           seated ? "text-lit/90" : "text-muted/70"
                         }`}
                       >
-                        {desk.id}
+                        {desk.code}
                       </span>
                     )}
                   </button>

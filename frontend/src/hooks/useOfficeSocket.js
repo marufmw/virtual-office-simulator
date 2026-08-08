@@ -1,18 +1,18 @@
 import { useEffect, useRef } from "react";
 import { WS_URL } from "../config";
+import { getToken } from "../api/client";
 
 /**
- * Manages the WebSocket connection and applies server messages to the
- * world. Sends the join handshake (hello) once the socket opens.
- * `joinInfoRef` is read lazily so profile changes don't reconnect.
- * `chatRef` holds `{ onMessage, onHistory, onHuddle, onHuddleMessage }`
- * callbacks, also read lazily. `onSeat` is called whenever the server
- * reports who is driving this character. Returns refs with `sendMove`,
- * `sendProfile`, `sendDm`, `sendHuddle`, `requestHistory` and `claimSeat`.
+ * The connection to one office, and everything that arrives over it applied
+ * to the world.
+ *
+ * The handshake is a session token and an office id: the server decides
+ * who this is and whether they have a desk there. `chatRef` and `boardRef`
+ * hold callbacks and are read lazily, so a re-render never reconnects.
  */
-export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
+export function useOfficeSocket(world, officeId, { chatRef, boardRef, onSeat, onRefused }) {
   const sendMoveRef = useRef(() => {});
-  const sendProfileRef = useRef(() => {});
+  const sendCharacterRef = useRef(() => {});
   const sendDmRef = useRef(() => {});
   const sendHuddleRef = useRef(() => {});
   const requestHistoryRef = useRef(() => {});
@@ -20,116 +20,71 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
   const sendBoardRef = useRef(() => {});
   const sendPointerRef = useRef(() => {});
   const requestBoardRef = useRef(() => {});
+
   const onSeatRef = useRef(onSeat);
   onSeatRef.current = onSeat;
+  const onRefusedRef = useRef(onRefused);
+  onRefusedRef.current = onRefused;
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
-    const joinInfo = joinInfoRef.current;
 
     ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          type: "hello",
-          deskId: joinInfo.deskId,
-          name: joinInfo.name,
-          character: joinInfo.character,
-        })
-      );
+      ws.send(JSON.stringify({ type: "hello", token: getToken(), officeId }));
     };
 
-    sendMoveRef.current = (x, y, phasing = false) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        // `phasing` tells the server to skip its collision check, for
-        // someone walking out of a desk that was placed on top of them
-        ws.send(JSON.stringify({ type: "move", x, y, phasing }));
-      }
+    const sender = (build) => (...args) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(build(...args)));
     };
 
-    sendProfileRef.current = (profile) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "update_profile", ...profile }));
-      }
-    };
-
-    sendDmRef.current = (to, text) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "dm", to, text }));
-      }
-    };
-
-    sendHuddleRef.current = (text) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "huddle_msg", text }));
-      }
-    };
-
-    sendBoardRef.current = (elements) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "board_update", elements }));
-      }
-    };
-
-    // Asks for the board as it stands. The scene we were greeted with on
-    // walking up is only good for that moment.
-    requestBoardRef.current = () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "board_sync" }));
-      }
-    };
-
-    sendPointerRef.current = (payload) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "board_pointer", ...payload }));
-      }
-    };
-
-    claimSeatRef.current = () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "claim_seat" }));
-      }
-    };
-
-    requestHistoryRef.current = (withId) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "dm_history", with: withId }));
-      }
-    };
+    // `phasing` tells the server to skip its collision check, for someone
+    // walking out of a desk that was placed on top of them
+    sendMoveRef.current = sender((x, y, phasing = false) => ({ type: "move", x, y, phasing }));
+    sendCharacterRef.current = sender((character) => ({ type: "set_character", character }));
+    sendDmRef.current = sender((to, text) => ({ type: "dm", to, text }));
+    sendHuddleRef.current = sender((text) => ({ type: "huddle_msg", text }));
+    sendBoardRef.current = sender((elements) => ({ type: "board_update", elements }));
+    sendPointerRef.current = sender((payload) => ({ type: "board_pointer", ...payload }));
+    // The scene we were greeted with on walking up is only good for that
+    // moment, so opening the board asks for it again
+    requestBoardRef.current = sender(() => ({ type: "board_sync" }));
+    claimSeatRef.current = sender(() => ({ type: "claim_seat" }));
+    requestHistoryRef.current = sender((withId) => ({ type: "dm_history", with: withId }));
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
 
       if (msg.type === "init") {
         world.myId = msg.id;
+        world.myEmail = msg.me.email;
+        world.myDeskId = msg.me.deskId;
         world.setRoom(msg.room);
-        for (const d of msg.desks ?? []) {
-          world.addDesk(d.id, d.x, d.y);
+        for (const desk of msg.desks ?? []) {
+          world.addDesk(desk.id, desk.x, desk.y, desk.code);
         }
         for (const p of msg.players) {
           world.addPlayer(p.id, p.x, p.y, p.character, p.name);
-          if (p.id === world.myId) {
-            world.myPos = { x: p.x, y: p.y };
-            world.myDeskId = p.deskId;
-            localStorage.setItem("character", p.character);
-          }
+          if (p.id === world.myId) world.myPos = { x: p.x, y: p.y };
         }
+        onSeatRef.current?.({ type: "ready", me: msg.me, office: msg.office });
       } else if (msg.type === "join") {
-        world.addPlayer(msg.player.id, msg.player.x, msg.player.y, msg.player.character, msg.player.name);
+        const p = msg.player;
+        world.addPlayer(p.id, p.x, p.y, p.character, p.name);
       } else if (msg.type === "update") {
-        // Someone changed their name/character/desk — rebuild their visuals
+        // Somebody changed their character — rebuild their visuals
         world.updatePlayer(msg.player.id, msg.player);
-        // Keep our own desk in sync so "Go to desk" targets the new one
-        if (msg.player.id === world.myId) world.myDeskId = msg.player.deskId;
       } else if (msg.type === "move") {
         world.movePlayer(msg.id, msg.x, msg.y);
       } else if (msg.type === "position") {
         // Server rejected our move — snap back to the authoritative position
         world.myPos = { x: msg.x, y: msg.y };
         world.movePlayer(world.myId, msg.x, msg.y);
-      } else if (msg.type === "error" && msg.reason === "invalid_desk") {
-        // Stored desk no longer exists — force the user back to the join form
-        localStorage.removeItem("deskId");
-        window.location.reload();
+      } else if (msg.type === "leave") {
+        world.removePlayer(msg.id);
+      } else if (msg.type === "error" || msg.type === "evicted") {
+        // No session, no membership, or no desk any more. Nothing here is
+        // recoverable from inside the room, so it goes back to the picker.
+        onRefusedRef.current?.(msg.reason);
       } else if (msg.type === "dm") {
         // Both the sender's echo and the recipient's copy land here
         const peerId = msg.from === world.myId ? msg.to : msg.from;
@@ -138,17 +93,15 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
           body: msg.body,
           createdAt: msg.createdAt,
         });
-      } else if (msg.type === "room_resized") {
-        world.setRoom(msg.room);
-      } else if (msg.type === "desk_added") {
-        world.addDesk(msg.desk.id, msg.desk.x, msg.desk.y);
-      } else if (msg.type === "desk_moved") {
-        world.moveDesk(msg.id, msg.x, msg.y);
-      } else if (msg.type === "desk_removed") {
-        world.removeDesk(msg.id);
-      } else if (msg.type === "layout_reset") {
-        // The whole office was rebuilt — start from a clean slate
-        window.location.reload();
+      } else if (msg.type === "dm_history") {
+        chatRef.current?.onHistory?.(
+          msg.with,
+          msg.messages.map((m) => ({
+            mine: m.fromEmail === world.myEmail,
+            body: m.body,
+            createdAt: m.createdAt,
+          }))
+        );
       } else if (msg.type === "huddle") {
         // Membership changed: joined a huddle, left one, or people moved
         chatRef.current?.onHuddle?.(
@@ -172,16 +125,22 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
           body: msg.body,
           createdAt: msg.createdAt,
         });
-      } else if (msg.type === "dm_history") {
-        const myDesk = world.myDeskId;
-        chatRef.current?.onHistory?.(
-          msg.with,
-          msg.messages.map((m) => ({
-            mine: m.fromDesk === myDesk,
-            body: m.body,
-            createdAt: m.createdAt,
-          }))
-        );
+      } else if (msg.type === "room_resized") {
+        world.setRoom(msg.room);
+      } else if (msg.type === "desk_added") {
+        world.addDesk(msg.desk.id, msg.desk.x, msg.desk.y, msg.desk.code);
+      } else if (msg.type === "desk_renamed") {
+        // The code is baked into the label above the desk, so the desk is
+        // rebuilt where it stands rather than edited in place
+        const desk = world.deskList().find((d) => d.id === msg.id);
+        if (desk) {
+          world.removeDesk(msg.id);
+          world.addDesk(msg.id, desk.x, desk.y, msg.code);
+        }
+      } else if (msg.type === "desk_moved") {
+        world.moveDesk(msg.id, msg.x, msg.y);
+      } else if (msg.type === "desk_removed") {
+        world.removeDesk(msg.id);
       } else if (msg.type === "board") {
         // Standing at the board, or no longer standing at it. Arriving
         // brings the scene as it currently stands along with it.
@@ -191,31 +150,33 @@ export function useOfficeSocket(world, joinInfoRef, chatRef, onSeat, boardRef) {
       } else if (msg.type === "board_pointer") {
         boardRef?.current?.applyPointer?.(msg);
       } else if (msg.type === "seat") {
-        // Either "you are driving this character, and N others are asking"
-        // or "somebody else has it". The overlay is the UI for both.
+        // Either "you are driving this character, and N other tabs are
+        // asking" or "another tab has it". The overlay is the UI for both.
         onSeatRef.current?.(msg);
-      } else if (msg.type === "leave") {
-        world.removePlayer(msg.id);
       }
     };
 
     return () => {
-      sendMoveRef.current = () => {};
-      sendProfileRef.current = () => {};
-      sendDmRef.current = () => {};
-      sendHuddleRef.current = () => {};
-      requestHistoryRef.current = () => {};
-      claimSeatRef.current = () => {};
-      sendBoardRef.current = () => {};
-      sendPointerRef.current = () => {};
-      requestBoardRef.current = () => {};
+      for (const ref of [
+        sendMoveRef,
+        sendCharacterRef,
+        sendDmRef,
+        sendHuddleRef,
+        requestHistoryRef,
+        claimSeatRef,
+        sendBoardRef,
+        sendPointerRef,
+        requestBoardRef,
+      ]) {
+        ref.current = () => {};
+      }
       ws.close();
     };
-  }, [world, joinInfoRef, chatRef, boardRef]);
+  }, [world, officeId, chatRef, boardRef]);
 
   return {
     sendMoveRef,
-    sendProfileRef,
+    sendCharacterRef,
     sendDmRef,
     sendHuddleRef,
     requestHistoryRef,

@@ -18,7 +18,9 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: "*",
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    // Sessions travel as a bearer token, not a cookie, so no credentials
+    // cross the boundary and a wildcard origin stays safe
+    allowedHeaders: ["Content-Type", "Authorization"],
   });
   app.enableShutdownHooks();
 
@@ -31,8 +33,8 @@ async function bootstrap(): Promise<void> {
   // first person knocks, so nothing is served until init has finished
   await app.init();
 
-  // The room shares the HTTP server: page, API and WebSocket, one port
-  await app.get(RealtimeGateway).attach(app.getHttpServer() as Server);
+  // The rooms share the HTTP server: page, API and WebSocket, one port
+  app.get(RealtimeGateway).attach(app.getHttpServer() as Server);
 
   await app.listen(PORT);
   new Logger("Bootstrap").log(

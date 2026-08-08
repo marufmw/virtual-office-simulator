@@ -1,44 +1,44 @@
 import { useCallback, useEffect, useState } from "react";
-import * as layout from "../api/layout";
+import { api } from "../api/client";
 import { DEFAULT_ROOM, growRoom } from "../game/roomBounds";
 
 /**
- * Owns the floor plan: the room's walls, every desk, and the edits made to
- * them. Edits apply immediately so dragging feels direct, then roll back
- * to the previous plan if the server refuses, surfacing its message.
+ * One office's floor plan and member list, and the edits made to them.
  *
- * `onSeatChange` and `onDeskRemoved` let a caller follow along when the
- * person or desk it cares about moves.
+ * Edits apply immediately so dragging feels direct, then roll back by
+ * reloading the real plan if the server refuses — simpler than tracking
+ * rollback state, and it can't drift out of step. The server's message is
+ * written for the person editing, so it is surfaced as-is.
  */
-export function useOfficeLayout({ onSeatChange, onDeskRemoved } = {}) {
+export function useOfficeLayout(officeId) {
   const [desks, setDesks] = useState(null); // null while loading
+  const [members, setMembers] = useState(null);
   const [room, setRoom] = useState(DEFAULT_ROOM);
+  const [name, setName] = useState("");
   const [failed, setFailed] = useState(false);
   const [problem, setProblem] = useState(null);
 
   const reload = useCallback(async () => {
-    const result = await layout.fetchOffice();
-    if (!result.ok) {
+    const [plan, list] = await Promise.all([api.office(officeId), api.members(officeId)]);
+    if (!plan.ok) {
       setDesks([]);
       setFailed(true);
+      setProblem(plan.error);
       return;
     }
-    setDesks(result.data.desks);
-    setRoom(result.data.room ?? DEFAULT_ROOM);
-  }, []);
+    setDesks(plan.data.desks);
+    setRoom(plan.data.room ?? DEFAULT_ROOM);
+    setName(plan.data.office.name);
+    if (list.ok) setMembers(list.data);
+  }, [officeId]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  /**
-   * Applies an edit straight away so dragging feels direct, then asks the
-   * server. A refused edit is undone by reloading the real floor plan —
-   * simpler than tracking rollback state, and it can't drift out of step.
-   */
   const edit = useCallback(
     async (applyDesks, call, nextRoom) => {
-      setDesks(applyDesks);
+      if (applyDesks) setDesks(applyDesks);
       if (nextRoom) setRoom(nextRoom);
       setProblem(null);
 
@@ -55,110 +55,158 @@ export function useOfficeLayout({ onSeatChange, onDeskRemoved } = {}) {
     [reload]
   );
 
+  const addDesk = useCallback(
+    async (code, x, y) => {
+      const done = await edit(null, () => api.createDesk(officeId, code, x, y), growRoom(room, x, y));
+      if (done) await reload();
+      return done;
+    },
+    [edit, officeId, reload, room]
+  );
+
   const moveDesk = useCallback(
     (id, x, y) =>
       edit(
         (current) => current.map((d) => (d.id === id ? { ...d, x, y } : d)),
-        () => layout.moveDesk(id, x, y),
+        () => api.moveDesk(officeId, id, x, y),
         growRoom(room, x, y)
       ),
-    [edit, room]
+    [edit, officeId, room]
   );
 
-  const addDesk = useCallback(
-    (id, x, y) =>
+  const renameDesk = useCallback(
+    (id, code) =>
       edit(
-        (current) => [...current, { id, x, y, occupant: null, occupant_character: null }],
-        () => layout.createDesk(id, x, y),
-        growRoom(room, x, y)
+        (current) => current.map((d) => (d.id === id ? { ...d, code } : d)),
+        () => api.renameDesk(officeId, id, code)
       ),
-    [edit, room]
+    [edit, officeId]
   );
 
   const removeDesk = useCallback(
-    (id) => {
-      onDeskRemoved?.(id);
-      return edit(
+    (id) =>
+      edit(
         (current) => current.filter((d) => d.id !== id),
-        () => layout.deleteDesk(id)
-      );
-    },
-    [edit, onDeskRemoved]
-  );
-
-  // Dropping someone on an occupied desk trades the two places
-  const reseat = useCallback(
-    (fromDeskId, toDeskId) => {
-      onSeatChange?.(fromDeskId, toDeskId);
-      return edit((current) => {
-        const seatOf = (desk) => ({
-          occupant: desk.occupant,
-          occupant_character: desk.occupant_character,
-        });
-        const mover = current.find((d) => d.id === fromDeskId);
-        const target = current.find((d) => d.id === toDeskId);
-        return current.map((d) => {
-          if (d.id === fromDeskId) return { ...d, ...seatOf(target) };
-          if (d.id === toDeskId) return { ...d, ...seatOf(mover) };
-          return d;
-        });
-      }, () => layout.reseatPerson(fromDeskId, toDeskId));
-    },
-    [edit, onSeatChange]
-  );
-
-  const renameOccupant = useCallback(
-    (deskId, name) =>
-      edit(
-        (current) => current.map((d) => (d.id === deskId ? { ...d, occupant: name } : d)),
-        () => layout.renameOccupant(deskId, name)
+        () => api.deleteDesk(officeId, id)
       ),
-    [edit]
+    [edit, officeId]
   );
 
-  const clearSeat = useCallback(
-    (deskId) =>
-      edit(
+  /** Sits a member at a desk, or empties it with `email: null`. */
+  const assignSeat = useCallback(
+    async (deskId, email) => {
+      const done = await edit(
         (current) =>
-          current.map((d) =>
-            d.id === deskId ? { ...d, occupant: null, occupant_character: null } : d
-          ),
-        () => layout.clearSeat(deskId)
-      ),
-    [edit]
+          current.map((d) => {
+            if (d.id === deskId) return { ...d, email, occupant: null };
+            // One desk each: wherever they were, they are not there now
+            return email && d.email === email ? { ...d, email: null, occupant: null } : d;
+          }),
+        () => api.assignDesk(officeId, deskId, email)
+      );
+      if (done) await reload();
+      return done;
+    },
+    [edit, officeId, reload]
+  );
+
+  /**
+   * Trades two desks' occupants. Two assignments rather than one call:
+   * moving somebody already frees the desk they came from, so doing the
+   * arriving person first leaves the other desk empty to receive theirs.
+   */
+  const swapSeats = useCallback(
+    async (deskA, deskB) => {
+      const a = desks?.find((d) => d.id === deskA);
+      const b = desks?.find((d) => d.id === deskB);
+      if (!a || !b) return false;
+
+      setProblem(null);
+      const first = await api.assignDesk(officeId, deskB, a.email);
+      if (!first.ok) {
+        setProblem(first.error);
+        await reload();
+        return false;
+      }
+      if (b.email) {
+        const second = await api.assignDesk(officeId, deskA, b.email);
+        if (!second.ok) setProblem(second.error);
+      }
+      await reload();
+      return true;
+    },
+    [desks, officeId, reload]
   );
 
   // Resizing by hand, which unlike dragging a desk may also shrink the room
   const resizeRoom = useCallback(
-    (next) => edit((current) => current, () => layout.setRoom(next), next),
-    [edit]
+    (next) => edit(null, () => api.setRoom(officeId, next), next),
+    [edit, officeId]
   );
 
-  const reset = useCallback(async () => {
-    const result = await layout.resetLayout();
-    if (!result.ok) {
-      setProblem(result.error);
-      return false;
-    }
-    setDesks(result.data.desks);
-    setRoom(result.data.room ?? DEFAULT_ROOM);
-    setProblem(null);
-    return true;
-  }, []);
+  const rename = useCallback(
+    async (next) => {
+      const result = await api.renameOffice(officeId, next);
+      if (!result.ok) {
+        setProblem(result.error);
+        return false;
+      }
+      setName(result.data.name);
+      return true;
+    },
+    [officeId]
+  );
+
+  // --- The member list -----------------------------------------------------
+
+  const memberEdit = useCallback(
+    async (call) => {
+      setProblem(null);
+      const result = await call();
+      if (!result.ok) {
+        setProblem(result.error);
+        return false;
+      }
+      await reload();
+      return true;
+    },
+    [reload]
+  );
+
+  const addMember = useCallback(
+    (email) => memberEdit(() => api.addMember(officeId, email)),
+    [memberEdit, officeId]
+  );
+
+  const removeMember = useCallback(
+    (email) => memberEdit(() => api.removeMember(officeId, email)),
+    [memberEdit, officeId]
+  );
+
+  const setRole = useCallback(
+    (email, role) => memberEdit(() => api.setRole(officeId, email, role)),
+    [memberEdit, officeId]
+  );
 
   return {
     desks,
+    members,
     room,
+    name,
     failed,
     problem,
     setProblem,
+    reload,
     addDesk,
     moveDesk,
+    renameDesk,
     removeDesk,
-    reseat,
-    renameOccupant,
-    clearSeat,
+    assignSeat,
+    swapSeats,
     resizeRoom,
-    reset,
+    rename,
+    addMember,
+    removeMember,
+    setRole,
   };
 }

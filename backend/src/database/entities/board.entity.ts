@@ -3,13 +3,13 @@ import { Column, Entity, PrimaryColumn } from "typeorm";
 import type { BoardElement } from "../../realtime/board.store";
 
 /**
- * What's drawn on a whiteboard, as the Excalidraw element array. One row per
- * board; the office has one, but nothing here assumes that.
+ * What's drawn on an office's whiteboard, as the Excalidraw element array.
+ * One board per office, which is why the office's id is the key.
  */
 @Entity({ name: "boards" })
 export class Board {
-  @PrimaryColumn({ type: "text" })
-  id: string;
+  @PrimaryColumn({ name: "office_id", type: "uuid" })
+  officeId: string;
 
   @Column({ type: "jsonb" })
   scene: BoardElement[];

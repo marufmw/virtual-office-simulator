@@ -1,11 +1,11 @@
 import { Module } from "@nestjs/common";
 
-import { OfficeModule } from "../office/office.module";
+import { OfficesModule } from "../offices/offices.module";
 import { RealtimeGateway } from "./realtime.gateway";
 
-/** The live room: sessions, huddles and the whiteboard, over one WebSocket. */
+/** The live rooms: sessions, huddles and whiteboards, over one WebSocket. */
 @Module({
-  imports: [OfficeModule],
+  imports: [OfficesModule],
   providers: [RealtimeGateway],
   exports: [RealtimeGateway],
 })

@@ -9,10 +9,10 @@ export const DESK_HEIGHT = DESK_UNITS.height;
 /**
  * Creates a desk with office clutter on top: a "monitor" (the
  * calculator sprite rotated 90°) in front of the keyboard, papers,
- * and a coffee mug — plus its number label.
- * `id` looks like "desk-3" — the label shows just the number.
+ * and a coffee mug — plus the code written on it, which is what the
+ * office calls that desk.
  */
-export function createDesk(id, x, y) {
+export function createDesk(label, x, y) {
   const group = new THREE.Group();
   group.position.set(x, y, 0);
 
@@ -36,16 +36,16 @@ export function createDesk(id, x, y) {
     group.add(item);
   }
 
-  const label = createNameLabel(id.replace("desk-", "#"));
-  label.sprite.position.y = DESK_HEIGHT / 2 + 0.4;
-  group.add(label.sprite);
+  const plate = createNameLabel(label);
+  plate.sprite.position.y = DESK_HEIGHT / 2 + 0.4;
+  group.add(plate.sprite);
 
   function dispose() {
     group.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) obj.material.dispose();
     });
-    label.dispose();
+    plate.dispose();
   }
 
   return { group, dispose };

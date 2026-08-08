@@ -2,17 +2,18 @@ import { DataSourceOptions } from "typeorm";
 
 import { Board } from "./entities/board.entity";
 import { Desk } from "./entities/desk.entity";
+import { Membership } from "./entities/membership.entity";
 import { Message } from "./entities/message.entity";
-import { Player } from "./entities/player.entity";
-import { RoomRow } from "./entities/room.entity";
-import { InitialSchema1754600000000 } from "./migrations/1754600000000-initial-schema";
+import { Office } from "./entities/office.entity";
+import { User } from "./entities/user.entity";
+import { OfficesAndAccounts1754700000000 } from "./migrations/1754700000000-offices-and-accounts";
 
-export const ENTITIES = [Desk, Player, RoomRow, Message, Board];
+export const ENTITIES = [User, Office, Membership, Desk, Message, Board];
 
 /**
  * How we reach Postgres. The schema is owned by migrations rather than by
- * `synchronize` — the office runs against a database that already holds
- * everyone's desks, and nothing here may quietly rewrite it.
+ * `synchronize`: the office runs against a database that holds everyone's
+ * desks, and nothing here may quietly rewrite it.
  */
 export function buildDataSourceOptions(): DataSourceOptions {
   const url = process.env.DATABASE_URL;
@@ -30,7 +31,7 @@ export function buildDataSourceOptions(): DataSourceOptions {
     ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
     extra: { max: Number(process.env.DATABASE_POOL_MAX) || 10 },
     entities: ENTITIES,
-    migrations: [InitialSchema1754600000000],
+    migrations: [OfficesAndAccounts1754700000000],
     migrationsRun: true,
     synchronize: false,
     logging: process.env.DATABASE_LOGGING === "true",

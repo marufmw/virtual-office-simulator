@@ -4,7 +4,8 @@ import {
   Plus,
   Minus,
   Maximize2,
-  RotateCcw,
+  LayoutGrid,
+  Users,
   Trash2,
   X,
   Check,
@@ -22,6 +23,7 @@ import {
 } from "./canvas/officeView";
 import { RoomFrame, TouchPad, BoardPlate } from "./canvas/officeCanvas";
 import { SeatPanel } from "./SeatPanel";
+import { MembersPanel } from "./MembersPanel";
 
 const GUIDE_TOLERANCE = 0.4; // how close counts as aligned with another desk
 const MIN_SPAN = 12; // mirrors MIN_ROOM_SPAN in the backend's layout.js
@@ -33,26 +35,37 @@ const clamp = (n, low, high) => Math.min(high, Math.max(low, n));
 const round1 = (n) => Math.round(n * 10) / 10;
 
 /**
- * Full-screen floor-plan editor: a pannable, zoomable canvas with the
- * office drawn to scale, a list of desks, and an inspector for whatever is
- * selected. Desks are dragged to rearrange, nameplates dragged to swap
- * people, and the walls dragged to resize the room.
+ * Running an office, in two tabs.
+ *
+ * **Layout** is a pannable, zoomable canvas with the room drawn to scale:
+ * desks are dragged to rearrange, nameplates dragged between desks to trade
+ * seats, and the walls dragged to resize the room. **Members** is the list
+ * of emails allowed in, which is where a seat can be given to somebody who
+ * has never signed in.
+ *
+ * The admin's screen — a member never gets here.
  */
 export function LayoutEditor({
+  officeName,
   desks,
+  members,
   room,
+  me,
   problem,
   onDismissProblem,
   onMove,
+  onRename,
   onAdd,
   onDelete,
-  onReseat,
-  onRename,
-  onClearSeat,
+  onAssign,
+  onSwap,
   onResizeRoom,
-  onReset,
+  onAddMember,
+  onRemoveMember,
+  onSetRole,
   onClose,
 }) {
+  const [tab, setTab] = useState("layout");
   const [tool, setTool] = useState("select");
   const [selectedId, setSelectedId] = useState(null);
   const [drag, setDrag] = useState(null); // { kind, id, x, y, moved }
@@ -189,7 +202,7 @@ export function LayoutEditor({
     if (!finished.moved) return; // a click, not a drag
 
     if (finished.kind === "person") {
-      if (dropTarget && dropTarget !== finished.id) onReseat(finished.id, dropTarget);
+      if (dropTarget && dropTarget !== finished.id) onSwap(finished.id, dropTarget);
       return;
     }
     onMove(finished.id, finished.x, finished.y);
@@ -237,7 +250,7 @@ export function LayoutEditor({
         if (pending) setPending(null);
         else if (tool !== "select") setTool("select");
         else setSelectedId(null);
-      } else if ((e.key === "Delete" || e.key === "Backspace") && selected && !selected.occupant) {
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected && !selected.email) {
         e.preventDefault();
         onDelete(selected.id);
         setSelectedId(null);
@@ -261,7 +274,7 @@ export function LayoutEditor({
     };
   }, [selected, pending, tool, onMove, onDelete, fitToRoom, zoomAround, setView, pan.x, pan.y]);
 
-  const taken = desks.filter((d) => d.occupant).length;
+  const taken = desks.filter((d) => d.email).length;
   const showLabels = zoom >= LABEL_ZOOM;
   const cursorClass = panning
     ? "cursor-grabbing"
@@ -278,26 +291,49 @@ export function LayoutEditor({
     <div className="fixed inset-0 z-40 flex flex-col bg-ink text-paper">
       {/* Toolbar */}
       <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/60 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+0.625rem)]">
-        <h1 className="font-display text-base font-extrabold tracking-tight">Office layout</h1>
+        <h1 className="min-w-0 max-w-48 truncate font-display text-base font-extrabold tracking-tight">
+          {officeName}
+        </h1>
 
+        {/* The two halves of running an office: where the desks are, and
+            who is allowed to sit at them */}
         <div className="flex items-center gap-1 rounded-md border border-line p-0.5">
-          <ToolButton
-            active={tool === "select"}
-            onClick={() => setTool("select")}
-            title="Select and move — V"
-          >
-            <MousePointer2 size={15} />
-          </ToolButton>
-          <ToolButton active={tool === "add"} onClick={() => setTool("add")} title="Add a desk — A">
-            <Plus size={15} />
-          </ToolButton>
+          <TabButton active={tab === "layout"} onClick={() => setTab("layout")}>
+            <LayoutGrid size={13} />
+            Layout
+          </TabButton>
+          <TabButton active={tab === "members"} onClick={() => setTab("members")}>
+            <Users size={13} />
+            Members
+            <span className="code text-[10px] opacity-70">{members?.length ?? 0}</span>
+          </TabButton>
         </div>
+
+        {tab === "layout" && (
+          <div className="flex items-center gap-1 rounded-md border border-line p-0.5">
+            <ToolButton
+              active={tool === "select"}
+              onClick={() => setTool("select")}
+              title="Select and move — V"
+            >
+              <MousePointer2 size={15} />
+            </ToolButton>
+            <ToolButton
+              active={tool === "add"}
+              onClick={() => setTool("add")}
+              title="Add a desk — A"
+            >
+              <Plus size={15} />
+            </ToolButton>
+          </div>
+        )}
 
         <p className="code hidden text-[11px] text-muted sm:block">
           {desks.length} desks · {taken} seated · {span.w} × {span.h} units
         </p>
 
         <div className="ml-auto flex items-center gap-1">
+          <div className={tab === "layout" ? "flex items-center gap-1" : "hidden"}>
           <button
             type="button"
             onClick={() => zoomAround(1 / 1.25)}
@@ -332,15 +368,8 @@ export function LayoutEditor({
           </button>
 
           <div className="mx-2 h-6 w-px bg-line" />
+          </div>
 
-          <button
-            type="button"
-            onClick={onReset}
-            className="flex items-center gap-2 rounded-md border border-line px-3 py-1.5 text-sm text-muted transition-colors hover:border-red-400/60 hover:text-red-300"
-          >
-            <RotateCcw size={14} />
-            <span className="hidden sm:inline">Reset</span>
-          </button>
           <button
             type="button"
             onClick={onClose}
@@ -352,6 +381,23 @@ export function LayoutEditor({
         </div>
       </header>
 
+      {tab === "members" ? (
+        <MembersPanel
+          members={members}
+          desks={desks}
+          me={me}
+          onAdd={onAddMember}
+          onRemove={onRemoveMember}
+          onSetRole={onSetRole}
+          onSeat={(email, deskId) => {
+            if (deskId) return onAssign(deskId, email);
+            // "no desk" chosen: empty whichever one they were sitting in,
+            // and do nothing at all if they weren't sitting anywhere
+            const current = desks.find((d) => d.email === email);
+            if (current) onAssign(current.id, null);
+          }}
+        />
+      ) : (
       <div className="flex min-h-0 flex-1">
         {/* Desk list */}
         <aside className="hidden w-52 shrink-0 flex-col border-r border-line/60 lg:flex">
@@ -371,19 +417,17 @@ export function LayoutEditor({
                     }`}
                   >
                     <span
-                      className={`h-2 w-2 shrink-0 rounded-sm ${
-                        desk.occupant ? "bg-lit" : "bg-line"
-                      }`}
+                      className={`h-2 w-2 shrink-0 rounded-sm ${desk.email ? "bg-lit" : "bg-line"}`}
                     />
                     <span
                       className={`code text-[11px] ${
                         desk.id === selectedId ? "text-pick" : "text-paper/80"
                       }`}
                     >
-                      {desk.id}
+                      {desk.code}
                     </span>
                     <span className="ml-auto truncate text-[11px] text-muted">
-                      {desk.occupant ?? ""}
+                      {desk.occupant ?? desk.email ?? ""}
                     </span>
                   </button>
                 </li>
@@ -455,7 +499,7 @@ export function LayoutEditor({
                 const dragging = drag?.id === desk.id;
                 const live = dragging && drag.kind === "desk" ? drag : desk;
                 const isSelected = desk.id === selectedId;
-                const taken2 = Boolean(desk.occupant);
+                const taken2 = Boolean(desk.email);
                 const receiving = dropTarget === desk.id && drag?.kind === "person";
                 const swapping = receiving && taken2;
 
@@ -493,7 +537,7 @@ export function LayoutEditor({
                             isSelected ? "text-pick" : taken2 ? "text-lit" : "text-muted"
                           }`}
                         >
-                          {desk.id}
+                          {desk.code}
                         </span>
                       )}
                     </button>
@@ -503,10 +547,10 @@ export function LayoutEditor({
                     {taken2 && showLabels && (
                       <span
                         onPointerDown={(e) => startDeskDrag(e, desk, "person")}
-                        title={`Drag ${desk.occupant} to another desk`}
+                        title={`Drag ${desk.occupant ?? desk.email} to another desk`}
                         className="absolute left-1/2 top-full max-w-24 -translate-x-1/2 translate-y-0.5 cursor-grab truncate rounded bg-lit/20 px-1 text-[9px] leading-tight text-paper/90 hover:bg-lit/40"
                       >
-                        {desk.occupant}
+                        {desk.occupant ?? desk.email.split("@")[0]}
                       </span>
                     )}
                   </div>
@@ -523,10 +567,12 @@ export function LayoutEditor({
                     top: (shown.maxY - drag.y) * PX,
                   }}
                 >
-                  {desks.find((d) => d.id === drag.id)?.occupant}
                   {(() => {
+                    const who = (desk) => desk?.occupant ?? desk?.email?.split("@")[0] ?? "";
+                    const from = desks.find((d) => d.id === drag.id);
                     const onto = desks.find((d) => d.id === dropTarget);
-                    return onto?.occupant && onto.id !== drag.id ? ` ⇄ ${onto.occupant}` : "";
+                    const trade = onto?.email && onto.id !== drag.id ? ` ⇄ ${who(onto)}` : "";
+                    return `${who(from)}${trade}`;
                   })()}
                 </div>
               )}
@@ -557,7 +603,7 @@ export function LayoutEditor({
                         }
                       }
                     }}
-                    placeholder="TB-000"
+                    placeholder="Desk 2"
                     maxLength={20}
                     className="code w-20 bg-transparent px-1 text-[11px] text-paper placeholder-muted/60 outline-none"
                   />
@@ -609,10 +655,13 @@ export function LayoutEditor({
         <aside className="hidden w-64 shrink-0 flex-col border-l border-line/60 lg:flex">
           {selected ? (
             <div className="flex flex-col gap-4 p-4">
-              <div>
-                <p className="code text-[10px] uppercase text-muted">Desk</p>
-                <p className="code mt-1 text-lg font-bold text-pick">{selected.id}</p>
-              </div>
+              {/* The code is what everyone calls this desk — on the plan,
+                  on the map, and on the label in the room itself */}
+              <CodeField
+                key={selected.id}
+                value={selected.code}
+                onCommit={(code) => onRename(selected.id, code)}
+              />
 
               <div className="grid grid-cols-2 gap-2">
                 <NumberField
@@ -627,24 +676,25 @@ export function LayoutEditor({
                 />
               </div>
 
-              <SeatPanel
-                desk={selected}
-                desks={desks}
-                onRename={onRename}
-                onReseat={onReseat}
-                onClear={onClearSeat}
-              />
+              <SeatPanel desk={selected} members={members} onAssign={onAssign} />
 
               <button
                 type="button"
-                disabled={Boolean(selected.occupant)}
                 onClick={() => {
+                  // Taking a desk away takes somebody's way in with it, so
+                  // it is worth asking first
+                  if (
+                    selected.email &&
+                    !window.confirm(
+                      `Remove ${selected.code}? ${selected.occupant ?? selected.email} loses their desk and can't walk in until you give them another.`
+                    )
+                  ) {
+                    return;
+                  }
                   onDelete(selected.id);
                   setSelectedId(null);
                 }}
-                title={
-                  selected.occupant ? "Move whoever sits here first" : `Remove ${selected.id}`
-                }
+                title={`Remove ${selected.code}`}
                 className="flex items-center justify-center gap-2 rounded-md border border-line py-2 text-sm text-muted transition-colors hover:border-red-400/60 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Trash2 size={14} />
@@ -694,20 +744,45 @@ export function LayoutEditor({
           </div>
         </aside>
       </div>
+      )}
 
       {/* Status bar */}
       <footer className="code flex shrink-0 items-center gap-4 border-t border-line/60 px-4 py-1.5 text-[10px] text-muted">
-        <span>
-          x {cursor.x} · y {cursor.y}
-        </span>
-        <span>{Math.round(zoom * 100)}%</span>
-        <span>
-          room {span.w} × {span.h}
-        </span>
-        {selected && <span className="text-pick">{selected.id} selected</span>}
-        <span className="ml-auto">snap {LAYOUT_SNAP}</span>
+        {tab === "layout" ? (
+          <>
+            <span>
+              x {cursor.x} · y {cursor.y}
+            </span>
+            <span>{Math.round(zoom * 100)}%</span>
+            <span>
+              room {span.w} × {span.h}
+            </span>
+            {selected && <span className="text-pick">{selected.code} selected</span>}
+            <span className="ml-auto">snap {LAYOUT_SNAP}</span>
+          </>
+        ) : (
+          <>
+            <span>{members?.length ?? 0} on the list</span>
+            <span className="ml-auto">email is the identity</span>
+          </>
+        )}
       </footer>
     </div>
+  );
+}
+
+function TabButton({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[13px] font-semibold transition-colors ${
+        active ? "bg-pick text-ink" : "text-muted hover:bg-plate hover:text-paper"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -724,6 +799,42 @@ function ToolButton({ active, onClick, title, children }) {
     >
       {children}
     </button>
+  );
+}
+
+/** The desk's code, renamed in place. Commits on Enter or blur. */
+function CodeField({ value, onCommit }) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next && next !== value) onCommit(next);
+    else setDraft(value);
+  };
+
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="code text-[10px] uppercase text-muted">Desk code</span>
+      <input
+        value={draft}
+        maxLength={20}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            setDraft(value);
+            e.currentTarget.blur();
+          }
+        }}
+        className="code rounded-md border border-line bg-ink px-2 py-1.5 text-lg font-bold text-pick outline-none transition-colors focus:border-pick"
+      />
+    </label>
   );
 }
 

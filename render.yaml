@@ -15,3 +15,13 @@ services:
       # internal URL keeps the traffic inside Render's private network.
       - key: DATABASE_URL
         sync: false
+      # The OAuth web client id. Not a secret, but it differs per
+      # deployment, so it is filled in from the dashboard too. Its Google
+      # console entry must list this service's URL as an authorized
+      # JavaScript origin.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # What session tokens are signed with. Generated once and kept, so a
+      # redeploy doesn't sign everybody out.
+      - key: SESSION_SECRET
+        generateValue: true

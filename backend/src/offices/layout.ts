@@ -74,6 +74,27 @@ export interface PlacedDesk extends DeskPosition {
 }
 
 /**
+ * Checks the code written on a desk — for a new one, and for one being
+ * renamed. `ignoreId` is the desk keeping its own code.
+ */
+export function validateCode(
+  code: unknown,
+  desks: DeskPosition[],
+  ignoreId: string | null = null
+): Checked<string> {
+  const trimmed = typeof code === "string" ? code.trim() : "";
+  if (!trimmed) return fail("Desk needs a code");
+  if (trimmed.length > MAX_ID_LENGTH) return fail(`Keep the code under ${MAX_ID_LENGTH} characters`);
+  if (!VALID_ID.test(trimmed)) return fail("Use letters, numbers, spaces, dashes or underscores");
+  if (
+    desks.some((d) => d.id !== ignoreId && d.id.toLowerCase() === trimmed.toLowerCase())
+  ) {
+    return fail(`${trimmed} already exists`);
+  }
+  return ok(trimmed);
+}
+
+/**
  * Checks a new desk. Returns the desk plus the room it needs, which the
  * caller should persist when it differs from the current one.
  */
@@ -82,13 +103,9 @@ export function validateNewDesk(
   desks: DeskPosition[],
   room: Room
 ): Checked<PlacedDesk> {
-  const trimmed = typeof id === "string" ? id.trim() : "";
-  if (!trimmed) return fail("Desk needs a code");
-  if (trimmed.length > MAX_ID_LENGTH) return fail(`Keep the code under ${MAX_ID_LENGTH} characters`);
-  if (!VALID_ID.test(trimmed)) return fail("Use letters, numbers, spaces, dashes or underscores");
-  if (desks.some((d) => d.id.toLowerCase() === trimmed.toLowerCase())) {
-    return fail(`${trimmed} already exists`);
-  }
+  const code = validateCode(id, desks);
+  if (!code.ok) return code;
+  const trimmed = code.value;
 
   const positionError = validPosition(x as number, y as number, room);
   if (positionError) return fail(positionError);
