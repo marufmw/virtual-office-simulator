@@ -5,9 +5,14 @@
   "scripts": {
     "dev": "concurrently -n frontend,backend -c blue,green \"pnpm --filter frontend dev\" \"pnpm --filter backend start\"",
     "dev:frontend": "pnpm --filter frontend dev",
-    "dev:backend": "pnpm --filter backend start"
+    "dev:backend": "pnpm --filter backend start",
+    "build": "pnpm --filter frontend build && pnpm --filter backend build",
+    "test": "pnpm --filter backend test"
   },
   "devDependencies": {
     "concurrently": "^10.0.4"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": ["unrs-resolver"]
   }
 }

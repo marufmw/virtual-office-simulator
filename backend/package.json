@@ -1,18 +1,53 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node --env-file-if-exists=../.env src/index.js",
-    "test": "node --test src/*.test.js"
-  },
-  "keywords": [],
-  "author": "",
+  "description": "The virtual office server: NestJS over TypeORM, with the room itself on a WebSocket",
+  "private": true,
   "license": "ISC",
-  "type": "commonjs",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start --watch --preserveWatchOutput",
+    "start:prod": "node dist/main.js",
+    "test": "jest",
+    "typeorm": "typeorm-ts-node-commonjs --dataSource src/database/typeorm-cli.ts",
+    "migration:run": "pnpm typeorm migration:run",
+    "migration:revert": "pnpm typeorm migration:revert",
+    "migration:generate": "pnpm typeorm migration:generate"
+  },
   "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/typeorm": "^11.0.0",
     "pg": "^8.22.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.30",
     "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@nestjs/schematics": "^11.0.8",
+    "@nestjs/testing": "^11.1.6",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.15.3",
+    "@types/ws": "^8.18.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.4",
+    "ts-loader": "^9.5.4",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.9.3"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "testEnvironment": "node"
   }
 }

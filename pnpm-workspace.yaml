@@ -1,3 +1,8 @@
 packages:
   - frontend
   - backend
+
+# A native resolver shipped with the Nest CLI. Prebuilt binaries come with
+# it, so its install script has nothing to do here.
+allowBuilds:
+  unrs-resolver: false
