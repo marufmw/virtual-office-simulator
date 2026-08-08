@@ -528,6 +528,18 @@ export function createWorld(container) {
     // AABB check against every other player and every desk
     // (client-side prediction; the server stays authoritative)
     collidesAt(x, y, exceptId = null) {
+      const inset = 1.5;
+
+      // Outside the playable room is always blocked.
+      if (
+        x < room.minX + inset ||
+        x > room.maxX - inset ||
+        y < room.minY + inset ||
+        y > room.maxY - inset
+      ) {
+        return true;
+      }
+
       for (const [pid, player] of players) {
         const pos = player.group.position;
         if (pid !== exceptId && Math.abs(pos.x - x) < 1 && Math.abs(pos.y - y) < 1) {
